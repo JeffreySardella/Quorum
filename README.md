@@ -334,6 +334,31 @@ TMDB_API_KEY=your-free-key-from-themoviedb.org
 OLLAMA_URL=http://127.0.0.1:11434
 ```
 
+## Troubleshooting
+
+### `auto` mode is quarantining movies that should be obvious
+
+The ensemble can get fooled when the **vision LLM hallucinates** a confidently-wrong title that outweighs the correct filename signal. Observed during testing: `A Quiet Place 2018 UHD BluRay...` (filename clearly says the answer) got overridden by vision saying "The Last of Us 2023" because the post-apocalyptic keyframes looked similar. Pattern is visible in the `.quorum.json` sidecar — if one candidate has `source: "filename"` with a year and another `source: "vision"` with a confident-but-wrong title, that's the bug.
+
+Two practical workarounds:
+
+1. **For small piles (≤20 files):** write a hardcoded mover like `scripts/manual_movies.py`. Faster than fighting the pipeline. The script writes an `auto-manual-*.log` in the same format as auto, so `quorum undo` still works.
+2. **For larger piles:** bump the filename-signal confidence in `src/quorum/signals/filename.py` (movie-year pattern: 0.70 → 0.95) so a clean filename+year wins over vision hallucinations. See the Known Issues section.
+
+### Vision or Whisper hanging for minutes on one file
+
+Whisper can fall into a hallucination loop on noisy/silent audio — spinning for 10+ minutes on a single clip. Fixed in the default config (`beam_size=1`, `condition_on_previous_text=False`), but if you see stalls in your enrich log, those tunings are in `src/quorum/signals/transcript.py`.
+
+Skip Whisper entirely with `quorum enrich --no-whisper` if stalls persist — vision alone produces good descriptions for most home video content.
+
+### ffmpeg errors on files with special characters
+
+Some filenames with colons, curly braces, or ampersands break ffmpeg's subprocess call (`Cats & Dogs_ ...`, `Spy.{2015}....avi`). The pipeline catches these per-file and continues, but those files won't get keyframes/audio. Rename the file before processing if you need them identified.
+
+### Vision model gives generic descriptions ("Footage from 2005")
+
+Usually means ffmpeg didn't actually extract keyframes, and vision got an empty input. Check the enrich log — if `reasoning` says "no visual or audio data provided," your ffmpeg binary is broken or missing. Set `QUORUM_FFMPEG=<path>` to override.
+
 ## Environment overrides
 
 - `QUORUM_FFMPEG=<path>` — force a specific ffmpeg binary (useful if system ffmpeg on PATH is outdated)
