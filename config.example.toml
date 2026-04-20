@@ -1,0 +1,59 @@
+# Copy to config.toml and edit to taste.
+
+[models]
+# Ollama tags — must exist in `ollama list`.
+vision = "mistral-small3.2:latest"
+text   = "gemma4:31b"
+
+[whisper]
+# Transcript-signal backend. Two options:
+#
+#   "faster-whisper"  — default. pip-installed, auto-downloads the model on
+#                        first run, runs CPU-only on AMD Windows. Zero manual
+#                        setup. Fast enough for 30-second clips.
+#
+#   "whisper.cpp"     — GPU-accelerated on AMD via the Vulkan build. Much
+#                        faster for large libraries, but you must download
+#                        the binary and model file yourself (see README).
+backend = "faster-whisper"
+
+# faster-whisper settings (ignored if backend = "whisper.cpp")
+# model_size options: tiny | base | small | medium | large-v3 | distil-large-v3
+#   small  — solid default, ~244MB, very fast CPU
+#   medium — stronger accuracy, ~769MB
+#   large-v3 — best accuracy, ~1.5GB, noticeably slower on CPU
+model_size   = "small"
+compute_type = "auto"   # auto | int8 | int8_float16 | float16 | float32
+
+# whisper.cpp settings (only used when backend = "whisper.cpp")
+# binary = "C:/tools/whisper.cpp/whisper-cli.exe"
+# model  = "C:/tools/whisper.cpp/models/ggml-large-v3-q5_0.bin"
+binary = ""
+model  = ""
+
+language = "auto"   # "en", "es", etc. to skip auto-detection
+
+[thresholds]
+# Minimum confidence to auto-rename during `quorum apply`.
+# Below this, the proposal stays in the review queue for you to approve by hand.
+auto_apply   = 0.85
+# Proposals below this don't even make it into the review queue.
+review_floor = 0.30
+
+[extract]
+keyframe_count = 6
+audio_seconds  = 30
+cache_dir      = ".quorum-cache"
+
+[paths]
+review_queue = "review.jsonl"
+
+[signals]
+# Toggle individual signals on/off. Disabled signals don't run even if their deps exist.
+filename    = true
+vision      = true
+transcript  = true
+# Not yet implemented:
+ocr         = false
+fingerprint = false
+opensub     = false
