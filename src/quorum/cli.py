@@ -1,6 +1,16 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+
+# Force UTF-8 I/O on Windows — filenames with Korean / emoji / non-cp1252 chars
+# otherwise crash the pipeline with UnicodeEncodeError during logging.
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 
 import typer
 from rich.console import Console

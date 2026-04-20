@@ -36,9 +36,12 @@ _DURATION_RE = re.compile(r"Duration:\s*(\d+):(\d+):(\d+\.?\d*)")
 
 def probe_duration(video: Path) -> float:
     """Probe duration by reading ffmpeg's stderr output (avoids a separate ffprobe dependency)."""
+    # Force utf-8 + errors=replace so non-cp1252 filenames (Korean, emoji, etc.)
+    # in ffmpeg's stderr can't corrupt the decode and crash the pipeline.
     r = subprocess.run(
         [ffmpeg_bin(), "-hide_banner", "-i", str(video)],
         capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
     )
     m = _DURATION_RE.search(r.stderr)
     if not m:
