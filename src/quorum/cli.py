@@ -238,6 +238,13 @@ def enrich(
 
 
 @app.command()
+def gui():
+    """Launch the Quorum desktop GUI (customtkinter wrapper over all commands)."""
+    from .gui import main as gui_main
+    gui_main()
+
+
+@app.command()
 def undo(
     log: Path = typer.Argument(..., exists=True, dir_okay=False, resolve_path=True,
                                help="Path to an auto-*.log JSONL file from a previous auto run."),

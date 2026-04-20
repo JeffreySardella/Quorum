@@ -22,6 +22,9 @@ dependencies = [
     # Photos mode: EXIF reading + HEIC (iPhone) support.
     "pillow>=10.0",
     "pillow-heif>=0.18",
+    # Optional GUI (quorum gui). customtkinter bundles its own themed widgets
+    # over tkinter (which ships with Python on Windows).
+    "customtkinter>=5.2",
 ]
 
 [project.scripts]
