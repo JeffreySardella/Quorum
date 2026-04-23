@@ -344,20 +344,49 @@ def _process_photo(
 
     dst = photo_destination(dest, dt, photo.name)
     if dst.exists():
-        # If it's literally the same file size, treat as duplicate source and skip.
-        try:
-            same = dst.stat().st_size == photo.stat().st_size
-        except OSError:
-            same = False
-        summary.skipped_collision += 1
-        entry.update({
-            "dst": str(dst),
-            "action": "skip_collision_same_size" if same else "skip_collision",
-            "source": source,
-        })
-        log_f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-        log_f.flush()
-        return
+        # Use content hash, NOT size, to decide whether these are truly the
+        # same file. Different photos can coincidentally share a name (iPhone
+        # reuses IMG_1234.JPG across generations; cameras reuse DSC_####.JPG)
+        # and approximately share size. The old size-check silently dropped
+        # thousands of unique photos during testing — never again.
+        import hashlib
+        def _hash(p, block=1 << 16):
+            h = hashlib.sha1()
+            try:
+                with p.open("rb") as f:
+                    while chunk := f.read(block):
+                        h.update(chunk)
+                return h.hexdigest()
+            except OSError:
+                return ""
+        same_content = _hash(photo) == _hash(dst)
+        if same_content:
+            summary.skipped_collision += 1
+            entry.update({
+                "dst": str(dst),
+                "action": "skip_collision_same_content",
+                "source": source,
+            })
+            log_f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            log_f.flush()
+            return
+        # Different content — find a free `(N)` suffix instead of overwriting.
+        stem, suffix, parent = dst.stem, dst.suffix, dst.parent
+        for i in range(1, 100):
+            candidate = parent / f"{stem} ({i}){suffix}"
+            if not candidate.exists():
+                dst = candidate
+                break
+            if _hash(candidate) == _hash(photo):
+                summary.skipped_collision += 1
+                entry.update({
+                    "dst": str(candidate),
+                    "action": "skip_collision_same_content",
+                    "source": source,
+                })
+                log_f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                log_f.flush()
+                return
 
     if not dry_run:
         try:
