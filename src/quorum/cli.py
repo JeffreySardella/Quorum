@@ -244,6 +244,10 @@ def enrich(
         False, "--no-whisper",
         help="Skip audio transcription. ~2-3x faster. Loses audio-derived detail (names, quotes).",
     ),
+    no_rename: bool = typer.Option(
+        False, "--no-rename",
+        help="Skip automatic folder rename after enrichment.",
+    ),
 ):
     """Watch each video and generate Plex-compatible .nfo sidecars.
 
@@ -254,10 +258,15 @@ def enrich(
 
     Also produces an `enrich-mislabels-*.log` listing videos whose content
     looks like it disagrees with the folder name — review those by hand.
+
+    After enrichment, automatically runs a folder-rename pass on fully
+    enriched folders. Use --no-rename to skip this step.
     """
     settings = _settings(config)
     console.print(f"[bold cyan]enrich[/] root=[dim]{root}[/]")
-    summary, log_path, mislabel_path = run_enrich(settings, root, force=force, use_whisper=(not no_whisper))
+    summary, log_path, mislabel_path = run_enrich(
+        settings, root, force=force, use_whisper=(not no_whisper), no_rename=no_rename,
+    )
     print_enrich_summary(summary, log_path, mislabel_path)
 
 
@@ -281,6 +290,31 @@ def enrich_photos_cmd(
     from .enrich_photos import run_enrich_photos
     summary, log_path = run_enrich_photos(settings, root, force=force, do_faces=(not no_faces))
     print_ep_summary(summary, log_path)
+
+
+@app.command("rename-folders")
+def rename_folders_cmd(
+    root: Path = typer.Argument(..., exists=True, file_okay=False, resolve_path=True,
+                                help="Library root (must contain Home Videos/ subfolder)"),
+    config: Path = typer.Option(None, "--config", "-c"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show proposed renames without doing them."),
+):
+    """Rename event folders based on enriched .nfo metadata.
+
+    Walks Home Videos/YYYY/ directories and proposes clean folder names
+    using an LLM that reads the .nfo titles and descriptions. Only renames
+    fully-enriched folders (every video has an .nfo).
+
+    Writes rename-folders-<timestamp>.log — pass to `quorum undo` to reverse.
+    """
+    settings = _settings(config)
+    console.print(f"[bold cyan]rename-folders[/] root=[dim]{root}[/]")
+    if dry_run:
+        console.print("[yellow]DRY RUN — no folders will be renamed.[/]")
+    from .rename_folders import print_summary as print_rf_summary
+    from .rename_folders import run_rename_folders
+    summary, log_path = run_rename_folders(settings, root, dry_run=dry_run)
+    print_rf_summary(summary, log_path, dry_run=dry_run)
 
 
 @app.command()

@@ -212,24 +212,29 @@ class QuorumApp(ctk.CTk):
         root, _ = self._picker(tab, 0, "Organized root:")
         force_var = ctk.BooleanVar()
         nowhisper_var = ctk.BooleanVar(value=True)
+        norename_var = ctk.BooleanVar()
         ctk.CTkCheckBox(tab, text="Skip Whisper transcription (2-3× faster, vision-only descriptions)",
                         variable=nowhisper_var).grid(row=1, column=1, sticky="w", padx=6, pady=2)
         ctk.CTkCheckBox(tab, text="Force regenerate existing .nfo files",
                         variable=force_var).grid(row=2, column=1, sticky="w", padx=6, pady=2)
+        ctk.CTkCheckBox(tab, text="Skip automatic folder rename after enrichment (--no-rename)",
+                        variable=norename_var).grid(row=3, column=1, sticky="w", padx=6, pady=2)
         hint = ("Walks every video under the root, extracts keyframes + audio, runs "
                 "vision + Whisper, writes a Plex .nfo sidecar with a real title + plot. "
-                "Resume-friendly — skips any video that already has a .nfo.")
+                "Resume-friendly — skips any video that already has a .nfo. "
+                "After enrichment, automatically renames fully enriched event folders.")
         ctk.CTkLabel(tab, text=hint, wraplength=780, justify="left",
-                     text_color=("gray30", "gray70")).grid(row=3, column=0, columnspan=3, padx=10, pady=(8, 4), sticky="w")
+                     text_color=("gray30", "gray70")).grid(row=4, column=0, columnspan=3, padx=10, pady=(8, 4), sticky="w")
 
         def build_args():
             args = [str(QUORUM_EXE), "enrich"]
             if force_var.get(): args.append("--force")
             if nowhisper_var.get(): args.append("--no-whisper")
+            if norename_var.get(): args.append("--no-rename")
             args.append(root.get())
             return args
 
-        self._add_run_row(tab, 4, build_args, requires=[root])
+        self._add_run_row(tab, 5, build_args, requires=[root])
 
     def _build_movies_tab(self, tab) -> None:
         tab.columnconfigure(1, weight=1)

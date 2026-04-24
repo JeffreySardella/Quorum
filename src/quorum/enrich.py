@@ -254,6 +254,7 @@ def run_enrich(
     root: Path,
     force: bool = False,
     use_whisper: bool = True,
+    no_rename: bool = False,
 ) -> tuple[EnrichSummary, Path, Path]:
     videos = _iter_enrichable(root)
     summary = EnrichSummary(total=len(videos))
@@ -335,6 +336,17 @@ def run_enrich(
                 progress.advance(task)
     finally:
         ollama.close()
+
+    # Auto-trigger folder rename on fully enriched folders (unless disabled)
+    if not no_rename:
+        from .rename_folders import run_rename_folders
+
+        console.print("[cyan]Running automatic folder rename pass...[/]")
+        rename_summary, _ = run_rename_folders(
+            settings, root, dry_run=False, log_file=None,
+        )
+        if rename_summary.renamed:
+            console.print(f"[green]Renamed {rename_summary.renamed} folder(s)[/]")
 
     return summary, log_path, mislabel_path
 
