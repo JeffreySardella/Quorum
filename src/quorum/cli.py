@@ -388,6 +388,27 @@ def serve(
 
 
 @app.command()
+def collections(
+    root: Path = typer.Argument(..., exists=True, file_okay=False, resolve_path=True,
+                                help="Library root with enriched content"),
+    config: Path = typer.Option(None, "--config", "-c"),
+    min_person: int = typer.Option(3, "--min-person", help="Min distinct folders a person must appear in."),
+    min_theme: int = typer.Option(3, "--min-theme", help="Min distinct events for a theme collection."),
+):
+    """Auto-generate Plex collections from face clusters and scene tags.
+
+    Injects <set> tags into existing .nfo files so Plex groups related
+    content into browsable collections like 'Videos with Sophia' or 'Beach'.
+    """
+    settings = _settings(config)
+    console.print(f"[bold cyan]collections[/] root=[dim]{root}[/]")
+    from .collections import print_summary as print_coll_summary
+    from .collections import run_collections
+    summary, log_path = run_collections(settings, root, min_person, min_theme)
+    print_coll_summary(summary, log_path)
+
+
+@app.command()
 def gui():
     """Launch the Quorum desktop GUI (customtkinter wrapper over all commands)."""
     from .gui import main as gui_main
