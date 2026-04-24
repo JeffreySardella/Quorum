@@ -77,6 +77,22 @@ class OcrSignal:
         if not all_text_parts:
             return []
 
+        # Detect credits text
+        credits_patterns = [
+            r"(?i)directed\s+by",
+            r"(?i)produced\s+by",
+            r"(?i)written\s+by",
+            r"(?i)starring",
+            r"(?i)a\s+\w+\s+film",
+            r"(?i)a\s+\w+\s+production",
+        ]
+        credits_texts: list[str] = []
+        for text_item in all_text_parts:
+            for pat in credits_patterns:
+                if re.search(pat, text_item):
+                    credits_texts.append(text_item.strip())
+                    break
+
         all_text = " ".join(all_text_parts)
         mean_conf = sum(confidences) / len(confidences) if confidences else 0.0
 
@@ -88,11 +104,16 @@ class OcrSignal:
             # Clean up: remove common non-title words
             cleaned = best_title.strip()
             if len(cleaned) >= 3:
+                notes_parts = []
+                notes_parts.append(f"title card: {cleaned[:100]}")
+                if credits_texts:
+                    notes_parts.append(f"credits: {'; '.join(credits_texts)[:100]}")
+                notes_parts.append(f"all text: {all_text[:100]}")
                 candidates.append(Candidate(
                     title=cleaned,
                     confidence=max(0.0, min(1.0, mean_conf * 0.9)),
                     source=self.name,
-                    notes=f"title card text: {cleaned[:100]}; all text: {all_text[:100]}",
+                    notes="; ".join(notes_parts),
                 ))
 
         return candidates

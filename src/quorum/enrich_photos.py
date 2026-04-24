@@ -727,7 +727,10 @@ def run_enrich_photos(
                 # ── face extraction ──
                 if do_faces and conn is not None:
                     photo_str = str(photo)
-                    if photo_str not in existing_face_photos:
+                    if force or photo_str not in existing_face_photos:
+                        if force and photo_str in existing_face_photos:
+                            conn.execute("DELETE FROM faces WHERE photo_path = ?", (photo_str,))
+                            conn.commit()
                         faces = _extract_faces(photo, settings.cpu_only)
                         for bbox, emb_bytes in faces:
                             fid = _store_face(

@@ -205,6 +205,13 @@ def run_rename_folders(
 
                 if not proposed or proposed.lower() == folder.name.lower():
                     summary.skipped_same_name += 1
+                    if log_f:
+                        log_f.write(json.dumps({
+                            "ts": datetime.now().isoformat(timespec="seconds"),
+                            "action": "skip_same_name",
+                            "folder": str(folder),
+                        }, ensure_ascii=False) + "\n")
+                        log_f.flush()
                     progress.advance(task)
                     continue
 

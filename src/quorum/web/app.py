@@ -320,20 +320,78 @@ def create_app(settings: Settings, jobs: JobRegistry) -> FastAPI:
 
     @app.post("/api/faces/rename")
     async def api_faces_rename(
-        cluster_id: str = Form(...),
+        cluster_id: int = Form(...),
         name: str = Form(...),
+        root: str = Form(...),
     ):
-        # Placeholder -- faces rename logic depends on the face cluster storage
-        return {"status": "ok", "cluster_id": cluster_id, "name": name}
+        import sqlite3
+        db_path = Path(root) / "faces.db"
+        if not db_path.exists():
+            raise HTTPException(404, "faces.db not found")
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.execute(
+                "UPDATE faces SET label = ?, label_source = 'manual', confidence = 1.0 "
+                "WHERE cluster_id = ?",
+                (name, cluster_id),
+            )
+            conn.commit()
+            updated = conn.total_changes
+        finally:
+            conn.close()
+        return {"status": "ok", "updated": updated}
 
     @app.post("/api/settings/save")
     async def api_settings_save(request: Request):
-        # Read form data and update config.toml
+        import tomllib
+
         form = await request.form()
+        updates: dict[str, Any] = {k: str(form[k]) for k in form}
+
         config_path = Path("config.toml")
-        updates: dict[str, Any] = {}
-        for key in form:
-            updates[key] = form[key]
+        existing: dict[str, Any] = {}
+        if config_path.exists():
+            existing = tomllib.loads(config_path.read_text(encoding="utf-8"))
+
+        # Apply updates — form fields use dot notation (e.g. "models.vision")
+        for key, raw in updates.items():
+            parts = key.split(".")
+            target = existing
+            for part in parts[:-1]:
+                target = target.setdefault(part, {})
+            # Coerce to appropriate Python/TOML type
+            if raw.lower() in ("true", "false"):
+                target[parts[-1]] = raw.lower() == "true"
+            elif raw.isdigit():
+                target[parts[-1]] = int(raw)
+            else:
+                try:
+                    target[parts[-1]] = float(raw)
+                except ValueError:
+                    target[parts[-1]] = raw
+
+        # Serialise dict to TOML text
+        def _to_toml(d: dict[str, Any], prefix: str = "") -> list[str]:
+            lines: list[str] = []
+            scalars = {k: v for k, v in d.items() if not isinstance(v, dict)}
+            sections = {k: v for k, v in d.items() if isinstance(v, dict)}
+            for k, v in scalars.items():
+                if isinstance(v, bool):
+                    lines.append(f"{k} = {'true' if v else 'false'}")
+                elif isinstance(v, str):
+                    lines.append(f'{k} = "{v}"')
+                else:
+                    lines.append(f"{k} = {v}")
+            for k, sub in sections.items():
+                section = f"{prefix}.{k}" if prefix else k
+                lines.append(f"\n[{section}]")
+                lines.extend(_to_toml(sub, section))
+            return lines
+
+        config_path.write_text(
+            "\n".join(_to_toml(existing)) + "\n", encoding="utf-8",
+        )
+
         return {"status": "ok", "updated_keys": list(updates.keys())}
 
     return app

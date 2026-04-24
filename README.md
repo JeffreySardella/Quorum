@@ -43,6 +43,7 @@ The setup script installs everything via pip:
 - `pillow` + `pillow-heif` — EXIF reading for photos (including iPhone HEIC)
 - `insightface` + `onnxruntime` — face clustering for `enrich-photos`
 - `paddleocr` — OCR signal for title card / credit text extraction
+- `pyacoustid` — audio fingerprinting for duplicate detection and music identification
 - `watchdog` — filesystem monitoring for `watch` daemon
 - `fastapi` + `uvicorn` + `jinja2` — web UI for `serve`
 - All the usual Python deps (typer, httpx, pydantic, rich)

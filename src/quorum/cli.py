@@ -67,6 +67,14 @@ def scan(
     pipe = Pipeline(settings)
     try:
         proposals = pipe.scan(root)
+        # Write dedup log if fingerprint signal collected fingerprints
+        for sig in pipe.signals:
+            if hasattr(sig, "find_duplicates"):
+                duplicates = sig.find_duplicates()
+                if duplicates:
+                    from .signals.fingerprint import write_dedup_log
+                    dedup_path = write_dedup_log(duplicates, root)
+                    console.print(f"[cyan]Found {len(duplicates)} potential duplicate pair(s) → {dedup_path}[/]")
     finally:
         pipe.close()
 

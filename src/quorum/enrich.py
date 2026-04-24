@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import re
 import xml.etree.ElementTree as ET
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -102,6 +102,7 @@ class EnrichResult:
     reasoning: str
     vision: dict
     transcript_snippet: str
+    music_tags: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -137,7 +138,7 @@ def _extract_year_from_name(name: str) -> int | None:
     return int(m.group(0)) if m else None
 
 
-def _write_nfo(video: Path, result: EnrichResult, year: int | None) -> Path:
+def _write_nfo(video: Path, result: EnrichResult, year: int | None, music_tags: list[str] | None = None) -> Path:
     """Write a Plex-compatible .nfo sidecar next to the video."""
     nfo_path = video.with_suffix(".nfo")
     root = ET.Element("movie")
@@ -147,6 +148,9 @@ def _write_nfo(video: Path, result: EnrichResult, year: int | None) -> Path:
         ET.SubElement(root, "year").text = str(year)
     ET.SubElement(root, "genre").text = "Home Video"
     ET.SubElement(root, "tag").text = "quorum-enriched"
+    if music_tags:
+        for tag in music_tags:
+            ET.SubElement(root, "tag").text = f"music:{tag}"
     tree = ET.ElementTree(root)
     ET.indent(tree, space="  ", level=0)
     tree.write(nfo_path, encoding="utf-8", xml_declaration=True)
@@ -194,6 +198,23 @@ def enrich_one(
         except Exception as e:
             console.log(f"[yellow]whisper failed for {video.name}: {e}[/]")
 
+    # 4b) audio fingerprint for music tagging
+    music_tags: list[str] = []
+    if audio and settings.signals.fingerprint:
+        import os
+        api_key = os.environ.get("ACOUSTID_API_KEY", "")
+        if api_key:
+            try:
+                import acoustid
+                duration, fingerprint = acoustid.fingerprint_file(str(audio))
+                results = acoustid.lookup(api_key, fingerprint, duration)
+                for score, rec_id, title, artist in acoustid.parse_lookup_result(results):
+                    if score >= 0.8 and title:
+                        label = f"{title} - {artist}" if artist else title
+                        music_tags.append(label)
+            except Exception as e:
+                console.log(f"[yellow]fingerprint failed for {video.name}: {e}[/]")
+
     # 5) synthesis
     prompt = (
         SYNTHESIS_PROMPT
@@ -238,6 +259,7 @@ def enrich_one(
         reasoning=reasoning,
         vision=vision_data,
         transcript_snippet=transcript_text[:400],
+        music_tags=music_tags,
     )
 
 
@@ -298,7 +320,7 @@ def run_enrich(
                     year = _extract_year_from_name(v.parent.name) or _extract_year_from_name(
                         v.parent.parent.name
                     )
-                    _write_nfo(v, result, year)
+                    _write_nfo(v, result, year, music_tags=result.music_tags)
                     summary.enriched += 1
                     entry = {
                         "ts": datetime.now().isoformat(timespec="seconds"),
@@ -337,14 +359,16 @@ def run_enrich(
     finally:
         ollama.close()
 
-    # Auto-trigger folder rename on fully enriched folders (unless disabled)
+    # Auto-trigger folder rename on fully enriched folders (unless disabled).
+    # Append rename log entries to the enrich log so `quorum undo` reverses both.
     if not no_rename:
         from .rename_folders import run_rename_folders
 
         console.print("[cyan]Running automatic folder rename pass...[/]")
-        rename_summary, _ = run_rename_folders(
-            settings, root, dry_run=False, log_file=None,
-        )
+        with log_path.open("a", encoding="utf-8") as log_f:
+            rename_summary, _ = run_rename_folders(
+                settings, root, dry_run=False, log_file=log_f,
+            )
         if rename_summary.renamed:
             console.print(f"[green]Renamed {rename_summary.renamed} folder(s)[/]")
 

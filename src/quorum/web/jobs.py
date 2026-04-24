@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import sys
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -27,6 +29,30 @@ class Job:
     messages: list[str] = field(default_factory=list)
 
 
+class _MessageCapture(io.TextIOBase):
+    """Captures writes to a text stream and appends complete lines to a Job."""
+
+    def __init__(self, job: Job) -> None:
+        self._job = job
+        self._buf = ""
+
+    def write(self, s: str) -> int:
+        self._buf += s
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
+            if line.strip():
+                self._job.messages.append(line)
+        return len(s)
+
+    def flush(self) -> None:
+        if self._buf.strip():
+            self._job.messages.append(self._buf.strip())
+            self._buf = ""
+
+    def writable(self) -> bool:
+        return True
+
+
 class JobRegistry:
     def __init__(self) -> None:
         self._jobs: dict[str, Job] = {}
@@ -46,8 +72,15 @@ class JobRegistry:
     def _run(self, job: Job, func: Callable, args: tuple, kwargs: dict) -> None:
         job.status = JobStatus.RUNNING
         job.started_at = datetime.now()
+        capture = _MessageCapture(job)
         try:
-            job.result = func(*args, **kwargs)
+            old_stdout = sys.stdout
+            sys.stdout = capture  # type: ignore[assignment]
+            try:
+                job.result = func(*args, **kwargs)
+            finally:
+                sys.stdout = old_stdout
+                capture.flush()
             job.status = JobStatus.DONE
         except Exception as e:
             job.error = str(e)

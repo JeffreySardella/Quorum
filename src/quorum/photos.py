@@ -186,11 +186,24 @@ def _mtime_date(path: Path) -> tuple[datetime, str] | None:
     return None
 
 
+def _ocr_date_stamp(path: Path) -> tuple[datetime, str] | None:
+    """Try OCR date-overlay detection on a photo (e.g. film-camera date imprint)."""
+    try:
+        from .signals.ocr import parse_date_stamps
+        ocr_dt = parse_date_stamps([path])
+        if ocr_dt:
+            return ocr_dt, "ocr_date_stamp"
+    except ImportError:
+        pass
+    return None
+
+
 def resolve_date(path: Path) -> tuple[datetime, str] | None:
     """Best-effort date resolution. Returns (datetime, source) or None."""
     return (
         _read_exif_date(path)
         or _read_filename_date(path.stem)
+        or _ocr_date_stamp(path)
         or _read_folder_date(path.parent)
         or _mtime_date(path)
     )

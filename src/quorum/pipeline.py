@@ -114,6 +114,9 @@ class Pipeline:
                 console.log("[yellow]fingerprint signal enabled but ACOUSTID_API_KEY not set — skipping[/]")
 
     def close(self) -> None:
+        for sig in self.signals:
+            if hasattr(sig, "save_fingerprints"):
+                sig.save_fingerprints()
         self.ollama.close()
         self.tmdb.close()
 

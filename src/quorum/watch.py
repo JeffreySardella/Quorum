@@ -239,6 +239,8 @@ def run_watch(settings: Settings, dry_run: bool = False) -> None:
     signal.signal(signal.SIGTERM, _on_signal)
 
     stamp = datetime.now().strftime("%Y-%m-%d")
+    dest: Path | None = None
+    log_path: Path | None = None
 
     try:
         while not shutdown:
@@ -285,7 +287,12 @@ def run_watch(settings: Settings, dry_run: bool = False) -> None:
                                   state_path, log_f, dry_run)
 
             if unique and not dry_run:
-                _refresh_plex(watch_cfg.plex)
+                # Use the last dest's log for plex refresh entries
+                if dest and log_path:
+                    with open(log_path, "a", encoding="utf-8") as plex_log:
+                        _refresh_plex(watch_cfg.plex, log_f=plex_log)
+                else:
+                    _refresh_plex(watch_cfg.plex)
 
             if not shutdown:
                 time.sleep(watch_cfg.poll_interval)
