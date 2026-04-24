@@ -64,6 +64,7 @@ def _parse_json(text: str) -> dict | None:
 class TranscriptBackend(Protocol):
     def available(self) -> bool: ...
     def transcribe(self, audio: Path) -> str: ...
+    def transcribe_segments(self, audio: Path) -> list[tuple[float, float, str]]: ...
 
 
 class FasterWhisperBackend:
@@ -111,6 +112,24 @@ class FasterWhisperBackend:
         )
         return " ".join(seg.text.strip() for seg in segments).strip()
 
+    def transcribe_segments(self, audio: Path) -> list[tuple[float, float, str]]:
+        """Return list of (start_seconds, end_seconds, text) segments."""
+        model = self._load()
+        segments, _info = model.transcribe(
+            str(audio),
+            language=self.language,
+            vad_filter=True,
+            beam_size=1,
+            condition_on_previous_text=False,
+            no_speech_threshold=0.6,
+        )
+        result = []
+        for seg in segments:
+            text = seg.text.strip()
+            if text:
+                result.append((seg.start, seg.end, text))
+        return result
+
 
 class WhisperCppBackend:
     """External whisper.cpp CLI (the Vulkan Windows build gives real GPU
@@ -145,6 +164,52 @@ class WhisperCppBackend:
             return ""
         raw = txt_path.read_text(encoding="utf-8", errors="ignore")
         return _TS_PREFIX.sub("", raw).strip()
+
+    def transcribe_segments(self, audio: Path) -> list[tuple[float, float, str]]:
+        """Return list of (start_seconds, end_seconds, text) segments."""
+        out_prefix = audio.with_suffix("")
+        cmd = [
+            str(self.binary),
+            "-m", str(self.model),
+            "-f", str(audio),
+            "-osrt",
+            "-of", str(out_prefix),
+            "-t", "8",
+        ]
+        if self.language and self.language.lower() != "auto":
+            cmd += ["-l", self.language]
+        try:
+            subprocess.run(cmd, capture_output=True, check=True, text=True, timeout=600)
+        except subprocess.CalledProcessError:
+            return []
+        srt_path = out_prefix.with_suffix(".srt")
+        if not srt_path.exists():
+            return []
+        return _parse_srt(srt_path.read_text(encoding="utf-8", errors="ignore"))
+
+
+def _parse_srt(text: str) -> list[tuple[float, float, str]]:
+    """Parse SRT format into (start, end, text) tuples."""
+    segments = []
+    blocks = re.split(r"\n\n+", text.strip())
+    for block in blocks:
+        lines = block.strip().split("\n")
+        if len(lines) < 3:
+            continue
+        # Line 2: timecodes "00:00:01,000 --> 00:00:03,500"
+        tc_match = re.match(
+            r"(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})",
+            lines[1],
+        )
+        if not tc_match:
+            continue
+        g = tc_match.groups()
+        start = int(g[0]) * 3600 + int(g[1]) * 60 + int(g[2]) + int(g[3]) / 1000
+        end = int(g[4]) * 3600 + int(g[5]) * 60 + int(g[6]) + int(g[7]) / 1000
+        content = " ".join(lines[2:]).strip()
+        if content:
+            segments.append((start, end, content))
+    return segments
 
 
 # ── signal ────────────────────────────────────────────────────────────────

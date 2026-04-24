@@ -256,6 +256,10 @@ def enrich(
         False, "--no-rename",
         help="Skip automatic folder rename after enrichment.",
     ),
+    no_subs: bool = typer.Option(
+        False, "--no-subs",
+        help="Skip subtitle (.srt) generation.",
+    ),
 ):
     """Watch each video and generate Plex-compatible .nfo sidecars.
 
@@ -273,7 +277,8 @@ def enrich(
     settings = _settings(config)
     console.print(f"[bold cyan]enrich[/] root=[dim]{root}[/]")
     summary, log_path, mislabel_path = run_enrich(
-        settings, root, force=force, use_whisper=(not no_whisper), no_rename=no_rename,
+        settings, root, force=force, use_whisper=(not no_whisper),
+        no_rename=no_rename, no_subs=no_subs,
     )
     print_enrich_summary(summary, log_path, mislabel_path)
 

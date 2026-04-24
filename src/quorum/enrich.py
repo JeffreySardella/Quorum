@@ -103,6 +103,7 @@ class EnrichResult:
     vision: dict
     transcript_snippet: str
     music_tags: list[str] = field(default_factory=list)
+    transcript_segments: list[tuple[float, float, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -157,6 +158,28 @@ def _write_nfo(video: Path, result: EnrichResult, year: int | None, music_tags: 
     return nfo_path
 
 
+def _format_srt_time(seconds: float) -> str:
+    """Convert seconds to SRT timecode format: HH:MM:SS,mmm"""
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    ms = int((seconds % 1) * 1000)
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+
+def _write_srt(video: Path, segments: list[tuple[float, float, str]]) -> Path | None:
+    """Write an SRT subtitle file next to the video."""
+    if not segments:
+        return None
+    srt_path = video.with_suffix(".srt")
+    with srt_path.open("w", encoding="utf-8") as f:
+        for i, (start, end, text) in enumerate(segments, 1):
+            f.write(f"{i}\n")
+            f.write(f"{_format_srt_time(start)} --> {_format_srt_time(end)}\n")
+            f.write(f"{text}\n\n")
+    return srt_path
+
+
 # ── per-video enrichment ──────────────────────────────────────────────────
 def enrich_one(
     video: Path,
@@ -192,9 +215,11 @@ def enrich_one(
 
     # 4) transcript (optional — skipping it cuts ~10-15s/video)
     transcript_text = ""
+    transcript_segments: list[tuple[float, float, str]] = []
     if use_whisper and audio and transcript_backend and transcript_backend.available():
         try:
-            transcript_text = transcript_backend.transcribe(audio)
+            transcript_segments = transcript_backend.transcribe_segments(audio)
+            transcript_text = " ".join(text for _, _, text in transcript_segments)
         except Exception as e:
             console.log(f"[yellow]whisper failed for {video.name}: {e}[/]")
 
@@ -260,6 +285,7 @@ def enrich_one(
         vision=vision_data,
         transcript_snippet=transcript_text[:400],
         music_tags=music_tags,
+        transcript_segments=transcript_segments,
     )
 
 
@@ -277,6 +303,7 @@ def run_enrich(
     force: bool = False,
     use_whisper: bool = True,
     no_rename: bool = False,
+    no_subs: bool = False,
 ) -> tuple[EnrichSummary, Path, Path]:
     videos = _iter_enrichable(root)
     summary = EnrichSummary(total=len(videos))
@@ -321,6 +348,12 @@ def run_enrich(
                         v.parent.parent.name
                     )
                     _write_nfo(v, result, year, music_tags=result.music_tags)
+                    if not no_subs and result.transcript_segments:
+                        srt_existing = v.with_suffix(".srt")
+                        if not srt_existing.exists() or force:
+                            srt = _write_srt(v, result.transcript_segments)
+                            if srt:
+                                console.log(f"[dim]wrote {srt.name}[/]")
                     summary.enriched += 1
                     entry = {
                         "ts": datetime.now().isoformat(timespec="seconds"),
