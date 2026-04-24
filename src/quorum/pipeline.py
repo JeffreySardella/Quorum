@@ -104,6 +104,14 @@ class Pipeline:
         if settings.signals.ocr:
             from .signals.ocr import OcrSignal
             self.signals.append(OcrSignal(cpu_only=settings.cpu_only))
+        if settings.signals.fingerprint:
+            import os
+            api_key = os.environ.get("ACOUSTID_API_KEY", "")
+            if api_key:
+                from .signals.fingerprint import FingerprintSignal
+                self.signals.append(FingerprintSignal(api_key, settings.extract.cache_dir))
+            else:
+                console.log("[yellow]fingerprint signal enabled but ACOUSTID_API_KEY not set — skipping[/]")
 
     def close(self) -> None:
         self.ollama.close()
