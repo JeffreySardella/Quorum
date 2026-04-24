@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Dedup Report - Quorum{% endblock %}
+{% block content %}
+<h1>Dedup Report</h1>
+<p>Find duplicate media files using audio fingerprinting and perceptual hashing.</p>
+
+<div id="dedup-results">
+    <p>Deduplication results will appear here after running a scan with the fingerprint signal enabled.</p>
+    <p>Enable in config: <code>[signals] fingerprint = true</code></p>
+</div>
+
+<h2>How It Works</h2>
+<ul>
+    <li><strong>Videos:</strong> Chromaprint audio fingerprinting compares audio tracks.</li>
+    <li><strong>Photos:</strong> Perceptual hashing detects visually similar images.</li>
+    <li>Results are compared pair-wise and shown side by side for manual review.</li>
+</ul>
+{% endblock %}

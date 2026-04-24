@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Commands - Quorum{% endblock %}
+{% block content %}
+<h1>Commands</h1>
+<p>Launch any Quorum command as a background job.</p>
+
+<form hx-post="/api/commands/run" hx-target="#job-result" hx-swap="innerHTML">
+    <fieldset>
+        <label for="mode">Mode</label>
+        <select id="mode" name="mode" required>
+            <option value="">-- Select a command --</option>
+            <option value="auto">auto (identify + organize)</option>
+            <option value="home-videos">home-videos (year/event)</option>
+            <option value="photos">photos (EXIF date sort)</option>
+            <option value="scan">scan (identify only)</option>
+            <option value="enrich">enrich (generate .nfo)</option>
+            <option value="enrich-photos">enrich-photos (tag + faces)</option>
+            <option value="triage">triage (home vs commercial)</option>
+            <option value="rename-folders">rename-folders (LLM rename)</option>
+        </select>
+    </fieldset>
+
+    <fieldset>
+        <label for="src">Source path</label>
+        <input type="text" id="src" name="src" placeholder="/path/to/source/directory">
+    </fieldset>
+
+    <fieldset>
+        <label for="dest">Destination path (if required)</label>
+        <input type="text" id="dest" name="dest" placeholder="/path/to/destination">
+    </fieldset>
+
+    <fieldset>
+        <label>
+            <input type="checkbox" name="dry_run" value="true">
+            Dry run (simulate, don't move files)
+        </label>
+    </fieldset>
+
+    <button type="submit">Run</button>
+</form>
+
+<div id="job-result"></div>
+
+<h2>Job History</h2>
+{% if jobs %}
+<table>
+    <thead><tr><th>ID</th><th>Name</th><th>Status</th><th>Error</th></tr></thead>
+    <tbody>
+        {% for job in jobs | reverse %}
+        <tr>
+            <td><code>{{ job.id }}</code></td>
+            <td>{{ job.name }}</td>
+            <td><span class="job-status job-{{ job.status.value }}">{{ job.status.value }}</span></td>
+            <td>{{ job.error or '-' }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No jobs yet.</p>
+{% endif %}
+
+<script>
+document.body.addEventListener('htmx:afterRequest', function(event) {
+    if (event.detail.pathInfo.requestPath === '/api/commands/run' && event.detail.successful) {
+        try {
+            var data = JSON.parse(event.detail.xhr.responseText);
+            if (data.job_id) {
+                var el = document.getElementById('job-result');
+                var article = document.createElement('article');
+                var p = document.createElement('p');
+                p.textContent = 'Job ' + data.job_id + ' submitted.';
+                article.appendChild(p);
+                var output = document.createElement('pre');
+                output.id = 'job-output';
+                article.appendChild(output);
+                el.textContent = '';
+                el.appendChild(article);
+
+                var source = new EventSource('/api/jobs/' + data.job_id + '/stream');
+                source.onmessage = function(e) {
+                    var msg = JSON.parse(e.data);
+                    if (msg.message) {
+                        output.textContent += msg.message + '\n';
+                        output.scrollTop = output.scrollHeight;
+                    }
+                    if (msg.status === 'done' || msg.status === 'failed') {
+                        source.close();
+                        var statusText = msg.status === 'done' ? 'Completed' : 'Failed: ' + (msg.error || 'unknown');
+                        output.textContent += '\n--- ' + statusText + ' ---\n';
+                    }
+                };
+                source.onerror = function() { source.close(); };
+            }
+        } catch(e) {}
+    }
+});
+</script>
+{% endblock %}

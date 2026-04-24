@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Quorum{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+
+<div class="stat-grid">
+    <article class="stat-card">
+        <p>Ollama</p>
+        <h3>
+            {% if ollama_ok %}
+                <span class="status-ok">Online</span>
+            {% else %}
+                <span class="status-error">Offline</span>
+            {% endif %}
+        </h3>
+        <p>{{ settings.ollama_url }}</p>
+    </article>
+
+    <article class="stat-card">
+        <p>Mode</p>
+        <h3>{{ "CPU" if settings.cpu_only else "GPU" }}</h3>
+        <p>Processing mode</p>
+    </article>
+
+    <article class="stat-card">
+        <p>Watch Inboxes</p>
+        <h3>{{ settings.watch.inboxes | length }}</h3>
+        <p>Configured folders</p>
+    </article>
+
+    <article class="stat-card">
+        <p>Active Jobs</p>
+        <h3>{{ jobs | selectattr("status", "equalto", "running") | list | length }}</h3>
+        <p>Background tasks</p>
+    </article>
+</div>
+
+<h2>Configuration</h2>
+<table>
+    <thead><tr><th>Setting</th><th>Value</th></tr></thead>
+    <tbody>
+        <tr><td>Vision model</td><td>{{ settings.models.vision }}</td></tr>
+        <tr><td>Text model</td><td>{{ settings.models.text }}</td></tr>
+        <tr><td>Whisper backend</td><td>{{ settings.whisper.backend }}</td></tr>
+        <tr><td>Whisper model</td><td>{{ settings.whisper.model_size }}</td></tr>
+        <tr><td>Auto-apply threshold</td><td>{{ settings.thresholds.auto_apply }}</td></tr>
+        <tr><td>Review floor</td><td>{{ settings.thresholds.review_floor }}</td></tr>
+    </tbody>
+</table>
+
+<h2>Recent Jobs</h2>
+<div hx-get="/api/status" hx-trigger="every 10s" hx-swap="none">
+</div>
+{% if jobs %}
+<table>
+    <thead><tr><th>Name</th><th>Status</th><th>Started</th><th>Finished</th></tr></thead>
+    <tbody>
+        {% for job in jobs | reverse %}
+        <tr>
+            <td>{{ job.name }}</td>
+            <td><span class="job-status job-{{ job.status.value }}">{{ job.status.value }}</span></td>
+            <td>{{ job.started_at.strftime('%H:%M:%S') if job.started_at else '-' }}</td>
+            <td>{{ job.finished_at.strftime('%H:%M:%S') if job.finished_at else '-' }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No jobs have been run yet. Go to <a href="/commands">Commands</a> to start one.</p>
+{% endif %}
+{% endblock %}

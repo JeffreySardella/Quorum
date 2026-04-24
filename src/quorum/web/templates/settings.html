@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Settings - Quorum{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+<p>Current configuration values. Edit and save to update <code>config.toml</code>.</p>
+
+<form hx-post="/api/settings/save" hx-target="#save-result" hx-swap="innerHTML">
+    <h2>Ollama</h2>
+    <fieldset>
+        <label for="ollama_url">Ollama URL</label>
+        <input type="text" id="ollama_url" name="ollama_url" value="{{ settings.ollama_url }}">
+    </fieldset>
+
+    <h2>Models</h2>
+    <fieldset>
+        <label for="models.vision">Vision model</label>
+        <input type="text" id="models.vision" name="models.vision" value="{{ settings.models.vision }}">
+    </fieldset>
+    <fieldset>
+        <label for="models.text">Text model</label>
+        <input type="text" id="models.text" name="models.text" value="{{ settings.models.text }}">
+    </fieldset>
+
+    <h2>Whisper</h2>
+    <fieldset>
+        <label for="whisper.backend">Backend</label>
+        <select id="whisper.backend" name="whisper.backend">
+            <option value="faster-whisper" {{ 'selected' if settings.whisper.backend == 'faster-whisper' }}>faster-whisper</option>
+            <option value="whisper.cpp" {{ 'selected' if settings.whisper.backend == 'whisper.cpp' }}>whisper.cpp</option>
+        </select>
+    </fieldset>
+    <fieldset>
+        <label for="whisper.model_size">Model size</label>
+        <select id="whisper.model_size" name="whisper.model_size">
+            {% for size in ['tiny', 'base', 'small', 'medium', 'large-v3', 'distil-large-v3'] %}
+            <option value="{{ size }}" {{ 'selected' if settings.whisper.model_size == size }}>{{ size }}</option>
+            {% endfor %}
+        </select>
+    </fieldset>
+
+    <h2>Thresholds</h2>
+    <fieldset>
+        <label for="thresholds.auto_apply">Auto-apply threshold</label>
+        <input type="number" id="thresholds.auto_apply" name="thresholds.auto_apply"
+               value="{{ settings.thresholds.auto_apply }}" step="0.05" min="0" max="1">
+    </fieldset>
+    <fieldset>
+        <label for="thresholds.review_floor">Review floor</label>
+        <input type="number" id="thresholds.review_floor" name="thresholds.review_floor"
+               value="{{ settings.thresholds.review_floor }}" step="0.05" min="0" max="1">
+    </fieldset>
+
+    <h2>Signals</h2>
+    {% for sig in ['filename', 'vision', 'transcript', 'ocr', 'fingerprint'] %}
+    <fieldset>
+        <label>
+            <input type="checkbox" name="signals.{{ sig }}" value="true"
+                   {{ 'checked' if settings.signals[sig] }}>
+            {{ sig | capitalize }}
+        </label>
+    </fieldset>
+    {% endfor %}
+
+    <h2>Web UI</h2>
+    <fieldset>
+        <label for="web.port">Port</label>
+        <input type="number" id="web.port" name="web.port" value="{{ settings.web.port }}">
+    </fieldset>
+    <fieldset>
+        <label for="web.auth_user">Auth user (leave blank for no auth)</label>
+        <input type="text" id="web.auth_user" name="web.auth_user" value="{{ settings.web.auth_user }}">
+    </fieldset>
+    <fieldset>
+        <label for="web.auth_password">Auth password</label>
+        <input type="password" id="web.auth_password" name="web.auth_password" value="{{ settings.web.auth_password }}">
+    </fieldset>
+
+    <button type="submit">Save Settings</button>
+</form>
+
+<div id="save-result"></div>
+{% endblock %}

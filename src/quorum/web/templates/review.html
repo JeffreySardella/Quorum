@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Review Queue - Quorum{% endblock %}
+{% block content %}
+<h1>Review Queue</h1>
+<p>Proposals from <code>{{ queue_path }}</code>. Review, edit, then apply.</p>
+
+{% if proposals %}
+<form hx-post="/api/review/apply" hx-target="#apply-result" hx-swap="innerHTML">
+    <table>
+        <thead>
+            <tr>
+                <th>Confidence</th>
+                <th>Current Name</th>
+                <th>Proposed Name</th>
+                <th>Signals</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in proposals %}
+            <tr>
+                <td>
+                    {% set conf = p.get('confidence', 0) %}
+                    {% if conf >= 0.85 %}
+                        <span class="status-ok">{{ '%.2f' % conf }}</span>
+                    {% elif conf >= 0.30 %}
+                        <span class="status-warn">{{ '%.2f' % conf }}</span>
+                    {% else %}
+                        <span class="status-error">{{ '%.2f' % conf }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ p.get('current_name', p.get('src', '-')) }}</td>
+                <td>{{ p.get('proposed_name', p.get('proposed', '-')) }}</td>
+                <td>
+                    {% for s in p.get('signals', []) %}
+                        <small>{{ s.get('signal', '') }}: {{ '%.2f' % s.get('score', 0) }}</small><br>
+                    {% endfor %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <fieldset>
+        <label>
+            <input type="checkbox" name="dry_run" value="true">
+            Dry run
+        </label>
+    </fieldset>
+    <button type="submit">Apply Queue</button>
+</form>
+{% else %}
+<p>No proposals in the queue. Run <a href="/commands">scan</a> first.</p>
+{% endif %}
+
+<div id="apply-result"></div>
+{% endblock %}

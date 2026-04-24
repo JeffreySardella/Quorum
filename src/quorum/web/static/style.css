@@ -1,0 +1,72 @@
+/* Quorum custom styles */
+.status-ok { color: var(--pico-color-green-500, #2ecc71); }
+.status-warn { color: var(--pico-color-orange-500, #e67e22); }
+.status-error { color: var(--pico-color-red-500, #e74c3c); }
+
+pre.log {
+    max-height: 400px;
+    overflow-y: auto;
+    font-size: 0.85em;
+}
+
+.face-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 1rem;
+}
+.face-card {
+    text-align: center;
+    padding: 0.5rem;
+}
+.face-card img {
+    max-width: 100%;
+    border-radius: 8px;
+}
+
+.stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+.stat-card {
+    padding: 1rem;
+    border-radius: 8px;
+    text-align: center;
+}
+.stat-card h3 {
+    margin-bottom: 0.25rem;
+    font-size: 2rem;
+}
+.stat-card p {
+    margin: 0;
+    opacity: 0.7;
+}
+
+.job-status {
+    display: inline-block;
+    padding: 0.15em 0.5em;
+    border-radius: 4px;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+.job-pending { background: #555; color: #ccc; }
+.job-running { background: #2563eb; color: #fff; }
+.job-done { background: #16a34a; color: #fff; }
+.job-failed { background: #dc2626; color: #fff; }
+
+nav ul { list-style: none; }
+
+.file-tree li { cursor: pointer; }
+.file-tree li.dir::before { content: "\1F4C1 "; }
+.file-tree li.file::before { content: "\1F4C4 "; }
+
+#job-output {
+    max-height: 300px;
+    overflow-y: auto;
+    font-family: monospace;
+    font-size: 0.85em;
+    white-space: pre-wrap;
+    padding: 0.5rem;
+    border-radius: 4px;
+}

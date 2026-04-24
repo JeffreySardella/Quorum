@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Logs - Quorum{% endblock %}
+{% block content %}
+<h1>Logs</h1>
+<p>Browse run logs from previous operations.</p>
+
+<fieldset>
+    <label for="log-path">Log file path</label>
+    <input type="text" id="log-path" placeholder="Path to a .log JSONL file">
+    <button id="load-log-btn">Load</button>
+</fieldset>
+
+<div id="log-content">
+    <p>Enter a log file path above to view its contents. Quorum writes JSONL logs alongside organized files (e.g. <code>auto-2024-01-15.log</code>).</p>
+</div>
+
+<h2>Undo</h2>
+<p>To undo a previous run, use the CLI:</p>
+<pre><code>quorum undo /path/to/auto-*.log</code></pre>
+<p>Or run undo from the <a href="/commands">Commands</a> page.</p>
+
+<script>
+document.getElementById('load-log-btn').addEventListener('click', function() {
+    var path = document.getElementById('log-path').value;
+    if (!path) return;
+    fetch('/api/library/browse?path=' + encodeURIComponent(path))
+        .then(function(r) { return r.text(); })
+        .then(function(text) {
+            var container = document.getElementById('log-content');
+            container.textContent = '';
+            var pre = document.createElement('pre');
+            pre.className = 'log';
+            pre.textContent = text;
+            container.appendChild(pre);
+        })
+        .catch(function(e) {
+            var container = document.getElementById('log-content');
+            container.textContent = 'Failed to load log: ' + e;
+        });
+});
+</script>
+{% endblock %}

@@ -337,6 +337,40 @@ def watch(
 
 
 @app.command()
+def serve(
+    config: Path = typer.Option(None, "--config", "-c"),
+    port: int = typer.Option(None, "--port", "-p", help="Override port (default: from config or 8080)."),
+    no_watch: bool = typer.Option(False, "--no-watch", help="Don't start the watch daemon."),
+):
+    """Start the Quorum web UI (and optionally the watch daemon).
+
+    Opens a browser-based interface for managing your media library.
+    Also starts the watch-folder daemon in the background unless --no-watch.
+    """
+    import threading
+
+    import uvicorn
+
+    from .web.app import create_app
+    from .web.jobs import JobRegistry
+
+    settings = _settings(config)
+    actual_port = port or settings.web.port
+
+    jobs = JobRegistry()
+    web_app = create_app(settings, jobs)
+
+    if not no_watch and settings.watch.inboxes:
+        from .watch import run_watch
+        t = threading.Thread(target=run_watch, args=(settings,), daemon=True)
+        t.start()
+        console.print("[green]Watch daemon started in background.[/]")
+
+    console.print(f"[bold cyan]Quorum web UI[/] → http://localhost:{actual_port}")
+    uvicorn.run(web_app, host="0.0.0.0", port=actual_port, log_level="warning")
+
+
+@app.command()
 def gui():
     """Launch the Quorum desktop GUI (customtkinter wrapper over all commands)."""
     from .gui import main as gui_main

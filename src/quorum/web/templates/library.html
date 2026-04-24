@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Library Browser - Quorum{% endblock %}
+{% block content %}
+<h1>Library Browser</h1>
+<p>Browse your organized media library.</p>
+
+<fieldset>
+    <label for="browse-path">Path to browse</label>
+    <input type="text" id="browse-path" name="path" placeholder="Enter a directory path...">
+    <button id="browse-btn">Browse</button>
+</fieldset>
+
+<div id="file-listing">
+    <p>Enter a path above to browse files.</p>
+</div>
+
+<script>
+function browsePath(dirPath) {
+    fetch('/api/library/browse?path=' + encodeURIComponent(dirPath))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var listing = document.getElementById('file-listing');
+            listing.textContent = '';
+
+            var header = document.createElement('p');
+            var code = document.createElement('code');
+            code.textContent = data.path;
+            header.appendChild(document.createTextNode('Browsing: '));
+            header.appendChild(code);
+            listing.appendChild(header);
+
+            var ul = document.createElement('ul');
+            ul.className = 'file-tree';
+            data.items.forEach(function(item) {
+                var li = document.createElement('li');
+                li.className = item.is_dir ? 'dir' : 'file';
+                var label = item.name;
+                if (!item.is_dir && item.size) {
+                    label += ' (' + (item.size / 1024).toFixed(1) + ' KB)';
+                }
+                li.textContent = label;
+                if (item.is_dir) {
+                    li.addEventListener('click', function() {
+                        document.getElementById('browse-path').value = item.path;
+                        browsePath(item.path);
+                    });
+                }
+                ul.appendChild(li);
+            });
+            listing.appendChild(ul);
+        })
+        .catch(function(e) {
+            var listing = document.getElementById('file-listing');
+            listing.textContent = 'Failed to browse: ' + e;
+        });
+}
+
+document.getElementById('browse-btn').addEventListener('click', function() {
+    var path = document.getElementById('browse-path').value;
+    if (path) browsePath(path);
+});
+</script>
+{% endblock %}

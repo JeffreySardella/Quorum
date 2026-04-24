@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Face Review - Quorum{% endblock %}
+{% block content %}
+<h1>Face Review</h1>
+<p>View face clusters from photo enrichment. Assign names to identified people.</p>
+
+<div id="face-clusters">
+    <p>Face clusters will appear here after running <a href="/commands">enrich-photos</a> with face detection enabled.</p>
+    <p>To generate face data, run: <code>quorum enrich-photos &lt;root&gt;</code></p>
+</div>
+
+<h2>Rename a Cluster</h2>
+<form hx-post="/api/faces/rename" hx-target="#rename-result" hx-swap="innerHTML">
+    <fieldset>
+        <label for="cluster_id">Cluster ID</label>
+        <input type="text" id="cluster_id" name="cluster_id" placeholder="cluster_0" required>
+    </fieldset>
+    <fieldset>
+        <label for="face-name">Name</label>
+        <input type="text" id="face-name" name="name" placeholder="John Doe" required>
+    </fieldset>
+    <button type="submit">Rename</button>
+</form>
+<div id="rename-result"></div>
+{% endblock %}

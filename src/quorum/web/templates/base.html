@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Quorum{% endblock %}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body>
+    <nav class="container">
+        <ul><li><strong>Quorum</strong></li></ul>
+        <ul>
+            <li><a href="/">Dashboard</a></li>
+            <li><a href="/commands">Commands</a></li>
+            <li><a href="/review">Review</a></li>
+            <li><a href="/library">Library</a></li>
+            <li><a href="/faces">Faces</a></li>
+            <li><a href="/dedup">Dedup</a></li>
+            <li><a href="/logs">Logs</a></li>
+            <li><a href="/settings">Settings</a></li>
+        </ul>
+    </nav>
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+    <footer class="container">
+        <hr>
+        <small>Quorum &mdash; local media organizer</small>
+    </footer>
+</body>
+</html>
