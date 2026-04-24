@@ -318,6 +318,25 @@ def rename_folders_cmd(
 
 
 @app.command()
+def watch(
+    config: Path = typer.Option(None, "--config", "-c"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Log what would be processed without doing it."),
+):
+    """Start the watch-folder daemon.
+
+    Monitors inbox directories defined in config.toml [watch] section and
+    automatically processes new files through the appropriate pipeline.
+    Press Ctrl+C to stop.
+    """
+    settings = _settings(config)
+    if not settings.watch.inboxes:
+        console.print("[red]No watch inboxes configured. Add [[watch.inbox]] sections to config.toml.[/]")
+        raise typer.Exit(1)
+    from .watch import run_watch
+    run_watch(settings, dry_run=dry_run)
+
+
+@app.command()
 def gui():
     """Launch the Quorum desktop GUI (customtkinter wrapper over all commands)."""
     from .gui import main as gui_main
