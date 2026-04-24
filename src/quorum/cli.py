@@ -36,10 +36,24 @@ app = typer.Typer(
 )
 console = Console()
 
+# Global state set by the --cpu-only callback
+_cpu_only_override: bool = False
+
+@app.callback()
+def _main_callback(
+    cpu_only: bool = typer.Option(False, "--cpu-only", envvar="QUORUM_CPU_ONLY",
+                                   help="Force all ONNX components to use CPU (no DirectML)."),
+):
+    global _cpu_only_override
+    _cpu_only_override = cpu_only
+
 
 def _settings(config: Path | None):
     cfg = config or Path("config.toml")
-    return load_settings(cfg if cfg.exists() else None)
+    s = load_settings(cfg if cfg.exists() else None)
+    if _cpu_only_override:
+        s.cpu_only = True
+    return s
 
 
 @app.command()

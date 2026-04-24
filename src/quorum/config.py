@@ -66,8 +66,40 @@ class SignalToggles(BaseModel):
     opensub: bool = False
 
 
+class WatchInbox(BaseModel):
+    path: Path
+    mode: str = "auto"           # auto | home-videos | photos
+    dest: Path = Path(".")
+
+
+class WatchPlex(BaseModel):
+    enabled: bool = False
+    url: str = "http://127.0.0.1:32400"
+    token: str = ""
+    library_ids: list[int] = Field(default_factory=list)
+
+
+class Watch(BaseModel):
+    poll_interval: int = 30
+    inboxes: list[WatchInbox] = Field(default_factory=list)
+    plex: WatchPlex = Field(default_factory=WatchPlex)
+
+
+class Web(BaseModel):
+    port: int = 8080
+    auth_user: str = ""
+    auth_password: str = ""
+
+
+class Faces(BaseModel):
+    distance_threshold: float = 0.55
+    min_cluster_size: int = 2
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    cpu_only: bool = False
 
     tmdb_api_key: str = ""
     ollama_url: str = "http://127.0.0.1:11434"
@@ -78,6 +110,9 @@ class Settings(BaseSettings):
     extract: Extract = Field(default_factory=Extract)
     paths: Paths = Field(default_factory=Paths)
     signals: SignalToggles = Field(default_factory=SignalToggles)
+    watch: Watch = Field(default_factory=Watch)
+    web: Web = Field(default_factory=Web)
+    faces: Faces = Field(default_factory=Faces)
 
 
 def load_settings(config_path: Path | None = None) -> Settings:

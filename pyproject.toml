@@ -25,7 +25,24 @@ dependencies = [
     # Optional GUI (quorum gui). customtkinter bundles its own themed widgets
     # over tkinter (which ships with Python on Windows).
     "customtkinter>=5.2",
+    # OCR signal: PaddleOCR via ONNX Runtime (no PyTorch dependency)
+    "paddleocr>=2.7",
+    # Audio fingerprinting (wraps Chromaprint via fpcalc binary)
+    "pyacoustid>=1.3",
+    # Face embedding for enrich-photos (ONNX Runtime backend)
+    "insightface>=0.7",
+    "onnxruntime>=1.17",
+    # Watch-folder daemon
+    "watchdog>=4.0",
+    # Web UI
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
 ]
+
+[project.optional-dependencies]
+directml = ["onnxruntime-directml>=1.17"]
 
 [project.scripts]
 quorum = "quorum.cli:app"
