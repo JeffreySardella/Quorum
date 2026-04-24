@@ -96,3 +96,37 @@ def extract_audio_clip(video: Path, out_path: Path, seconds: int) -> Path | None
         capture_output=True, check=True,
     )
     return out_path if out_path.exists() else None
+
+
+def detect_scenes(video: Path, threshold: float = 0.3, min_gap: float = 30.0) -> list[float]:
+    """Detect scene changes using ffmpeg's scene detection filter.
+
+    Returns a sorted list of timestamps (in seconds) where scene changes occur.
+    Only returns changes at least min_gap seconds apart (avoids flickering).
+    """
+    duration = probe_duration(video)
+    if duration < 120:  # don't chapter videos under 2 minutes
+        return []
+
+    cmd = [
+        ffmpeg_bin(), "-hide_banner", "-i", str(video),
+        "-vf", f"select='gt(scene,{threshold})',showinfo",
+        "-vsync", "vfr",
+        "-f", "null", "-",
+    ]
+    result = subprocess.run(
+        cmd, capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
+        timeout=300,
+    )
+
+    # Parse showinfo output for timestamps: "pts_time:123.456"
+    timestamps: list[float] = [0.0]  # always start with chapter 1 at 0:00
+    pts_re = re.compile(r"pts_time:\s*([\d.]+)")
+    for m in pts_re.finditer(result.stderr):
+        t = float(m.group(1))
+        # Only add if far enough from the last timestamp
+        if timestamps and (t - timestamps[-1]) >= min_gap:
+            timestamps.append(t)
+
+    return timestamps

@@ -31,7 +31,7 @@ from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, T
 from rich.table import Table
 
 from .config import Settings
-from .extract import extract_audio_clip, extract_keyframes
+from .extract import detect_scenes, extract_audio_clip, extract_keyframes, probe_duration
 from .ollama_client import OllamaClient
 from .pipeline import VIDEO_EXTS
 from .signals.transcript import TranscriptBackend, build_backend
@@ -180,6 +180,29 @@ def _write_srt(video: Path, segments: list[tuple[float, float, str]]) -> Path | 
     return srt_path
 
 
+def _write_chapters(video: Path, scene_times: list[float]) -> Path | None:
+    """Write an OGM-style chapters file next to the video.
+
+    Format:
+        CHAPTER01=00:00:00.000
+        CHAPTER01NAME=Scene 1
+        CHAPTER02=00:05:23.000
+        CHAPTER02NAME=Scene 2
+    """
+    if len(scene_times) < 2:  # need at least 2 chapters to be useful
+        return None
+    chapters_path = video.with_suffix(".chapters.txt")
+    with chapters_path.open("w", encoding="utf-8") as f:
+        for i, t in enumerate(scene_times, 1):
+            h = int(t // 3600)
+            m = int((t % 3600) // 60)
+            s = int(t % 60)
+            ms = int((t % 1) * 1000)
+            f.write(f"CHAPTER{i:02d}={h:02d}:{m:02d}:{s:02d}.{ms:03d}\n")
+            f.write(f"CHAPTER{i:02d}NAME=Scene {i}\n")
+    return chapters_path
+
+
 # ── per-video enrichment ──────────────────────────────────────────────────
 def enrich_one(
     video: Path,
@@ -304,6 +327,7 @@ def run_enrich(
     use_whisper: bool = True,
     no_rename: bool = False,
     no_subs: bool = False,
+    no_chapters: bool = False,
 ) -> tuple[EnrichSummary, Path, Path]:
     videos = _iter_enrichable(root)
     summary = EnrichSummary(total=len(videos))
@@ -354,6 +378,20 @@ def run_enrich(
                             srt = _write_srt(v, result.transcript_segments)
                             if srt:
                                 console.log(f"[dim]wrote {srt.name}[/]")
+
+                    # Chapter detection for long videos
+                    if not no_chapters:
+                        vid_duration = probe_duration(v)
+                        if vid_duration >= 120:  # 2+ minutes
+                            try:
+                                scenes = detect_scenes(v)
+                                if scenes and len(scenes) >= 2:
+                                    chap = _write_chapters(v, scenes)
+                                    if chap:
+                                        console.log(f"[dim]wrote {chap.name} ({len(scenes)} chapters)[/]")
+                            except Exception as e:
+                                console.log(f"[yellow]chapter detection failed for {v.name}: {e}[/]")
+
                     summary.enriched += 1
                     entry = {
                         "ts": datetime.now().isoformat(timespec="seconds"),

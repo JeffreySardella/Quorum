@@ -260,6 +260,10 @@ def enrich(
         False, "--no-subs",
         help="Skip subtitle (.srt) generation.",
     ),
+    no_chapters: bool = typer.Option(
+        False, "--no-chapters",
+        help="Skip chapter detection for long videos.",
+    ),
 ):
     """Watch each video and generate Plex-compatible .nfo sidecars.
 
@@ -278,7 +282,7 @@ def enrich(
     console.print(f"[bold cyan]enrich[/] root=[dim]{root}[/]")
     summary, log_path, mislabel_path = run_enrich(
         settings, root, force=force, use_whisper=(not no_whisper),
-        no_rename=no_rename, no_subs=no_subs,
+        no_rename=no_rename, no_subs=no_subs, no_chapters=no_chapters,
     )
     print_enrich_summary(summary, log_path, mislabel_path)
 
