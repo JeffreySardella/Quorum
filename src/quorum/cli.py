@@ -261,6 +261,28 @@ def enrich(
     print_enrich_summary(summary, log_path, mislabel_path)
 
 
+@app.command("enrich-photos")
+def enrich_photos_cmd(
+    root: Path = typer.Argument(..., exists=True, file_okay=False, resolve_path=True,
+                                help="Photo library root (must contain Photos/ subfolder)"),
+    config: Path = typer.Option(None, "--config", "-c"),
+    force: bool = typer.Option(False, "--force", help="Regenerate all sidecars."),
+    no_faces: bool = typer.Option(False, "--no-faces", help="Scene tagging only, skip face clustering."),
+):
+    """Tag photos with scene descriptions and cluster faces.
+
+    Walks Photos/YYYY/YYYY-MM-DD/ directories, runs vision LLM on each photo
+    for scene tags, and optionally clusters faces using InsightFace. Writes
+    .quorum.json + .nfo sidecars.
+    """
+    settings = _settings(config)
+    console.print(f"[bold cyan]enrich-photos[/] root=[dim]{root}[/]")
+    from .enrich_photos import print_summary as print_ep_summary
+    from .enrich_photos import run_enrich_photos
+    summary, log_path = run_enrich_photos(settings, root, force=force, do_faces=(not no_faces))
+    print_ep_summary(summary, log_path)
+
+
 @app.command()
 def gui():
     """Launch the Quorum desktop GUI (customtkinter wrapper over all commands)."""
