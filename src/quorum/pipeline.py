@@ -101,6 +101,9 @@ class Pipeline:
                     f"[yellow]transcript signal enabled but backend "
                     f"'{settings.whisper.backend}' is unavailable — skipping[/]"
                 )
+        if settings.signals.ocr:
+            from .signals.ocr import OcrSignal
+            self.signals.append(OcrSignal(cpu_only=settings.cpu_only))
 
     def close(self) -> None:
         self.ollama.close()
@@ -111,7 +114,7 @@ class Pipeline:
         frames: list[Path] = []
         audio: Path | None = None
 
-        need_frames = any(s.name == "vision" for s in self.signals)
+        need_frames = any(s.name in ("vision", "ocr") for s in self.signals)
         need_audio = any(s.name in ("transcript", "fingerprint") for s in self.signals)
 
         if need_frames:
