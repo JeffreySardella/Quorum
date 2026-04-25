@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from quorum.notify import NotificationBus, webhook_listener
+from quorum.notify import NotificationBus
 
 
 class TestNotificationBus:

@@ -367,3 +367,77 @@ class TestReviewCommands:
         assert result.exit_code == 0
         assert "Corrected" in result.output
         assert "The Matrix (1999)" in result.output
+
+
+class TestNotifyCommands:
+    def test_notify_test(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "config.toml"
+        config_path.write_text('db_path = "quorum.db"', encoding="utf-8")
+        result = runner.invoke(app, ["notify", "test", "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "Test notification sent" in result.output
+
+    def test_notify_history(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "config.toml"
+        config_path.write_text('db_path = "quorum.db"', encoding="utf-8")
+        result = runner.invoke(app, ["notify", "history", "--config", str(config_path)])
+        assert result.exit_code == 0
+
+
+class TestSignalsCommands:
+    def test_signals_weights_default(self, tmp_path: Path) -> None:
+        import os
+        old_cwd = os.getcwd()
+        os.chdir(str(tmp_path))
+        try:
+            config_path = tmp_path / "config.toml"
+            config_path.write_text('db_path = "quorum.db"', encoding="utf-8")
+            result = runner.invoke(app, ["signals", "weights", "--config", str(config_path)])
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0
+        assert "filename" in result.output
+        assert "vision" in result.output
+
+    def test_signals_retune_no_feedback(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "quorum.db"
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'db_path = "{db_path.as_posix()}"', encoding="utf-8")
+        result = runner.invoke(app, ["signals", "retune", "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "No feedback" in result.output
+
+    def test_signals_retune_with_feedback(self, tmp_path: Path) -> None:
+        from quorum.db import QuorumDB
+        db_path = tmp_path / "quorum.db"
+        with QuorumDB(db_path) as db:
+            mid = db.insert_media(path="/a.mkv", media_type="video", size=100)
+            db.insert_signal(mid, "filename", "Test", 0.9, "", "2024-01-01T00:00:00")
+            db.insert_feedback(mid, "approve", "Test", created_at="2024-01-01T00:00:00")
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'db_path = "{db_path.as_posix()}"', encoding="utf-8")
+        import os
+        old_cwd = os.getcwd()
+        os.chdir(str(tmp_path))
+        try:
+            result = runner.invoke(app, ["signals", "retune", "--config", str(config_path)])
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0
+        assert "filename" in result.output
+
+    def test_signals_reset(self, tmp_path: Path) -> None:
+        import os
+        old_cwd = os.getcwd()
+        os.chdir(str(tmp_path))
+        try:
+            # Create a weights file first
+            import json
+            (tmp_path / "signal_weights.json").write_text(json.dumps({"filename": 1.5}))
+            config_path = tmp_path / "config.toml"
+            config_path.write_text('db_path = "quorum.db"', encoding="utf-8")
+            result = runner.invoke(app, ["signals", "reset", "--config", str(config_path)])
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0
+        assert "reset" in result.output.lower()
