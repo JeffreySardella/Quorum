@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS metadata (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
     media_id  INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
     key       TEXT    NOT NULL,
-    value     TEXT    NOT NULL
+    value     TEXT    NOT NULL,
+    UNIQUE(media_id, key)
 );
 CREATE INDEX IF NOT EXISTS idx_metadata_media ON metadata(media_id);
 CREATE INDEX IF NOT EXISTS idx_metadata_key   ON metadata(key);
@@ -172,4 +173,338 @@ class QuorumDB:
 
     def delete_media(self, media_id: int) -> None:
         self.conn.execute("DELETE FROM media WHERE id = ?", (media_id,))
+        self.conn.commit()
+
+    # ------------------------------------------------------------------
+    # Metadata CRUD
+    # ------------------------------------------------------------------
+
+    def insert_metadata(self, media_id: int, key: str, value: str) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO metadata (media_id, key, value) VALUES (?, ?, ?)",
+            (media_id, key, value),
+        )
+        self.conn.commit()
+        return cur.lastrowid
+
+    def get_metadata(self, media_id: int) -> list[dict]:
+        self.conn.row_factory = sqlite3.Row
+        rows = self.conn.execute(
+            "SELECT * FROM metadata WHERE media_id = ?", (media_id,)
+        ).fetchall()
+        self.conn.row_factory = None
+        return [dict(r) for r in rows]
+
+    def get_metadata_value(self, media_id: int, key: str) -> str | None:
+        row = self.conn.execute(
+            "SELECT value FROM metadata WHERE media_id = ? AND key = ?", (media_id, key)
+        ).fetchone()
+        return row[0] if row else None
+
+    def set_metadata(self, media_id: int, key: str, value: str) -> None:
+        self.conn.execute(
+            "INSERT INTO metadata (media_id, key, value) VALUES (?, ?, ?)"
+            " ON CONFLICT(media_id, key) DO UPDATE SET value=excluded.value",
+            (media_id, key, value),
+        )
+        self.conn.commit()
+
+    # ------------------------------------------------------------------
+    # Tags CRUD
+    # ------------------------------------------------------------------
+
+    def insert_tag(self, media_id: int, category: str, value: str) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO tags (media_id, category, value) VALUES (?, ?, ?)",
+            (media_id, category, value),
+        )
+        self.conn.commit()
+        return cur.lastrowid
+
+    def get_tags(self, media_id: int, category: str | None = None) -> list[dict]:
+        self.conn.row_factory = sqlite3.Row
+        if category is not None:
+            rows = self.conn.execute(
+                "SELECT * FROM tags WHERE media_id = ? AND category = ?", (media_id, category)
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM tags WHERE media_id = ?", (media_id,)
+            ).fetchall()
+        self.conn.row_factory = None
+        return [dict(r) for r in rows]
+
+    def clear_tags(self, media_id: int, category: str | None = None) -> None:
+        if category is not None:
+            self.conn.execute(
+                "DELETE FROM tags WHERE media_id = ? AND category = ?", (media_id, category)
+            )
+        else:
+            self.conn.execute("DELETE FROM tags WHERE media_id = ?", (media_id,))
+        self.conn.commit()
+
+    # ------------------------------------------------------------------
+    # Signals CRUD
+    # ------------------------------------------------------------------
+
+    def insert_signal(
+        self,
+        media_id: int,
+        signal_name: str,
+        candidate: str,
+        confidence: float,
+        reasoning: str,
+        created_at: str,
+    ) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO signals (media_id, signal_name, candidate, confidence, reasoning, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (media_id, signal_name, candidate, confidence, reasoning, created_at),
+        )
+        self.conn.commit()
+        return cur.lastrowid
+
+    def get_signals(self, media_id: int, signal_name: str | None = None) -> list[dict]:
+        self.conn.row_factory = sqlite3.Row
+        if signal_name is not None:
+            rows = self.conn.execute(
+                "SELECT * FROM signals WHERE media_id = ? AND signal_name = ?", (media_id, signal_name)
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM signals WHERE media_id = ?", (media_id,)
+            ).fetchall()
+        self.conn.row_factory = None
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Feedback CRUD
+    # ------------------------------------------------------------------
+
+    def insert_feedback(
+        self,
+        media_id: int,
+        action: str,
+        original: str,
+        correction: str | None = None,
+        created_at: str = "",
+    ) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO feedback (media_id, action, original, correction, created_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (media_id, action, original, correction, created_at),
+        )
+        self.conn.commit()
+        return cur.lastrowid
+
+    def get_feedback(self, media_id: int) -> list[dict]:
+        self.conn.row_factory = sqlite3.Row
+        rows = self.conn.execute(
+            "SELECT * FROM feedback WHERE media_id = ?", (media_id,)
+        ).fetchall()
+        self.conn.row_factory = None
+        return [dict(r) for r in rows]
+
+    def count_feedback(self, action: str | None = None) -> int:
+        if action is not None:
+            return self.conn.execute(
+                "SELECT COUNT(*) FROM feedback WHERE action = ?", (action,)
+            ).fetchone()[0]
+        return self.conn.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]
+
+    # ------------------------------------------------------------------
+    # Actions CRUD
+    # ------------------------------------------------------------------
+
+    def insert_action(
+        self,
+        operation: str,
+        source_path: str,
+        dest_path: str | None = None,
+        metadata: str | None = None,
+        reversible: int = 1,
+        created_at: str = "",
+    ) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO actions (operation, source_path, dest_path, metadata, reversible, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (operation, source_path, dest_path, metadata, reversible, created_at),
+        )
+        self.conn.commit()
+        return cur.lastrowid
+
+    def list_actions(self, reverse: bool = False) -> list[dict]:
+        self.conn.row_factory = sqlite3.Row
+        order = "DESC" if reverse else "ASC"
+        rows = self.conn.execute(f"SELECT * FROM actions ORDER BY created_at {order}").fetchall()
+        self.conn.row_factory = None
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Processing (jobs) CRUD
+    # ------------------------------------------------------------------
+
+    def insert_job(
+        self,
+        job_type: str,
+        media_id: int | None = None,
+        started_at: str | None = None,
+    ) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO processing (job_type, media_id, started_at) VALUES (?, ?, ?)",
+            (job_type, media_id, started_at),
+        )
+        self.conn.commit()
+        return cur.lastrowid
+
+    def get_job(self, job_id: int) -> dict | None:
+        self.conn.row_factory = sqlite3.Row
+        row = self.conn.execute("SELECT * FROM processing WHERE id = ?", (job_id,)).fetchone()
+        self.conn.row_factory = None
+        return dict(row) if row else None
+
+    def update_job(
+        self,
+        job_id: int,
+        status: str | None = None,
+        progress: float | None = None,
+        error: str | None = None,
+        completed_at: str | None = None,
+    ) -> None:
+        fields: list[str] = []
+        values: list = []
+        if status is not None:
+            fields.append("status = ?")
+            values.append(status)
+        if progress is not None:
+            fields.append("progress = ?")
+            values.append(progress)
+        if error is not None:
+            fields.append("error = ?")
+            values.append(error)
+        if completed_at is not None:
+            fields.append("completed_at = ?")
+            values.append(completed_at)
+        if not fields:
+            return
+        values.append(job_id)
+        self.conn.execute(f"UPDATE processing SET {', '.join(fields)} WHERE id = ?", values)
+        self.conn.commit()
+
+    def list_jobs(self, status: str | None = None) -> list[dict]:
+        self.conn.row_factory = sqlite3.Row
+        if status is not None:
+            rows = self.conn.execute(
+                "SELECT * FROM processing WHERE status = ?", (status,)
+            ).fetchall()
+        else:
+            rows = self.conn.execute("SELECT * FROM processing").fetchall()
+        self.conn.row_factory = None
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Events CRUD
+    # ------------------------------------------------------------------
+
+    def insert_event(
+        self,
+        name: str,
+        start_time: str | None = None,
+        end_time: str | None = None,
+        auto_detected: int = 1,
+        metadata: str | None = None,
+    ) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO events (name, start_time, end_time, auto_detected, metadata)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (name, start_time, end_time, auto_detected, metadata),
+        )
+        self.conn.commit()
+        return cur.lastrowid
+
+    def get_event(self, event_id: int) -> dict | None:
+        self.conn.row_factory = sqlite3.Row
+        row = self.conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+        self.conn.row_factory = None
+        return dict(row) if row else None
+
+    def list_events(self) -> list[dict]:
+        self.conn.row_factory = sqlite3.Row
+        rows = self.conn.execute("SELECT * FROM events ORDER BY start_time").fetchall()
+        self.conn.row_factory = None
+        return [dict(r) for r in rows]
+
+    def update_event(self, event_id: int, **kwargs) -> None:
+        fields: list[str] = []
+        values: list = []
+        for col in ("name", "start_time", "end_time", "auto_detected", "metadata"):
+            if col in kwargs:
+                fields.append(f"{col} = ?")
+                values.append(kwargs[col])
+        if not fields:
+            return
+        values.append(event_id)
+        self.conn.execute(f"UPDATE events SET {', '.join(fields)} WHERE id = ?", values)
+        self.conn.commit()
+
+    def delete_event(self, event_id: int) -> None:
+        # Unlink media first (foreign key ON DELETE for events is not CASCADE on media.event_id)
+        self.conn.execute("UPDATE media SET event_id = NULL WHERE event_id = ?", (event_id,))
+        self.conn.execute("DELETE FROM events WHERE id = ?", (event_id,))
+        self.conn.commit()
+
+    def assign_media_to_event(self, media_id: int, event_id: int) -> None:
+        self.conn.execute("UPDATE media SET event_id = ? WHERE id = ?", (event_id, media_id))
+        self.conn.commit()
+
+    def unlink_media_from_event(self, media_id: int) -> None:
+        self.conn.execute("UPDATE media SET event_id = NULL WHERE id = ?", (media_id,))
+        self.conn.commit()
+
+    def get_event_media(self, event_id: int) -> list[dict]:
+        self.conn.row_factory = sqlite3.Row
+        rows = self.conn.execute(
+            "SELECT * FROM media WHERE event_id = ?", (event_id,)
+        ).fetchall()
+        self.conn.row_factory = None
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Embeddings CRUD
+    # ------------------------------------------------------------------
+
+    def insert_embedding(
+        self,
+        media_id: int,
+        emb_type: str,
+        vector: bytes,
+        label: str | None = None,
+    ) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO embeddings (media_id, type, vector, label) VALUES (?, ?, ?, ?)",
+            (media_id, emb_type, vector, label),
+        )
+        self.conn.commit()
+        return cur.lastrowid
+
+    def get_embeddings(self, media_id: int, emb_type: str | None = None) -> list[dict]:
+        self.conn.row_factory = sqlite3.Row
+        if emb_type is not None:
+            rows = self.conn.execute(
+                "SELECT * FROM embeddings WHERE media_id = ? AND type = ?", (media_id, emb_type)
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM embeddings WHERE media_id = ?", (media_id,)
+            ).fetchall()
+        self.conn.row_factory = None
+        return [dict(r) for r in rows]
+
+    def delete_embeddings(self, media_id: int, emb_type: str | None = None) -> None:
+        if emb_type is not None:
+            self.conn.execute(
+                "DELETE FROM embeddings WHERE media_id = ? AND type = ?", (media_id, emb_type)
+            )
+        else:
+            self.conn.execute("DELETE FROM embeddings WHERE media_id = ?", (media_id,))
         self.conn.commit()
