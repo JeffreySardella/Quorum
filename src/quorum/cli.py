@@ -114,6 +114,134 @@ def db_index(
     console.print(f"  Vector: {counts['vector_indexed']} embeddings generated")
 
 
+# ------------------------------------------------------------------
+# events sub-command group
+# ------------------------------------------------------------------
+
+events_app = typer.Typer(help="Manage auto-detected events.", no_args_is_help=True)
+app.add_typer(events_app, name="events")
+
+
+@events_app.command("detect")
+def events_detect(
+    gap_hours: float = typer.Option(None, "--gap", help="Hours between events (overrides config)."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Auto-detect events by clustering media on timestamps."""
+    from .db import QuorumDB
+    from .events import detect_events
+    s = _settings(config)
+    gap = gap_hours if gap_hours is not None else s.events.gap_hours
+    with QuorumDB(s.db_path) as db:
+        result = detect_events(db, gap_hours=gap, ollama_url=s.ollama_url, model=s.models.text)
+    console.print("[green]Event detection complete:[/]")
+    console.print(f"  Events created: {result['events_created']}")
+    console.print(f"  Media assigned: {result['media_assigned']}")
+
+
+@events_app.command("list")
+def events_list(
+    year: str = typer.Option(None, "--year", help="Filter by year (e.g. 2024)."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """List all events."""
+    from .db import QuorumDB
+    s = _settings(config)
+    with QuorumDB(s.db_path) as db:
+        events = db.list_events()
+        if year:
+            events = [e for e in events if e.get("start_time", "").startswith(year)]
+        t = Table(title="Events")
+        t.add_column("ID", justify="right")
+        t.add_column("name")
+        t.add_column("date")
+        t.add_column("files", justify="right")
+        for event in events:
+            media_count = len(db.get_event_media(event["id"]))
+            date_str = event.get("start_time", "")[:10] if event.get("start_time") else "-"
+            t.add_row(str(event["id"]), event["name"], date_str, str(media_count))
+    console.print(t)
+
+
+@events_app.command("show")
+def events_show(
+    event: str = typer.Argument(..., help="Event ID or name."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Show files in an event."""
+    from .db import QuorumDB
+    s = _settings(config)
+    with QuorumDB(s.db_path) as db:
+        # Try as ID first, then name search
+        try:
+            eid = int(event)
+            ev = db.get_event(eid)
+        except ValueError:
+            ev = None
+            for e in db.list_events():
+                if event.lower() in e["name"].lower():
+                    ev = e
+                    break
+        if not ev:
+            console.print(f"[red]Event not found:[/] {event}")
+            raise typer.Exit(1)
+        console.print(f"[bold]{ev['name']}[/]")
+        start_str = (ev.get("start_time") or "")[:10]
+        end_str = (ev.get("end_time") or "")[:10]
+        console.print(f"Date: {start_str} to {end_str}")
+        media = db.get_event_media(ev["id"])
+        t = Table()
+        t.add_column("type")
+        t.add_column("file")
+        for m in media:
+            t.add_row(m["type"], Path(m["path"]).name)
+    console.print(t)
+
+
+@events_app.command("merge")
+def events_merge(
+    id1: int = typer.Argument(..., help="First event ID."),
+    id2: int = typer.Argument(..., help="Second event ID."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Merge two events into one."""
+    from .db import QuorumDB
+    s = _settings(config)
+    with QuorumDB(s.db_path) as db:
+        e1 = db.get_event(id1)
+        e2 = db.get_event(id2)
+        if not e1 or not e2:
+            console.print("[red]One or both events not found.[/]")
+            raise typer.Exit(1)
+        # Move all media from e2 to e1
+        for m in db.get_event_media(id2):
+            db.assign_media_to_event(m["id"], id1)
+        # Update time range
+        starts = [e1.get("start_time", ""), e2.get("start_time", "")]
+        ends = [e1.get("end_time", ""), e2.get("end_time", "")]
+        db.update_event(id1, start_time=min(s for s in starts if s) if any(starts) else None,
+                        end_time=max(s for s in ends if s) if any(ends) else None)
+        db.delete_event(id2)
+    console.print(f"[green]Merged event {id2} into {id1}[/]")
+
+
+@events_app.command("rename")
+def events_rename(
+    event_id: int = typer.Argument(..., help="Event ID."),
+    name: str = typer.Argument(..., help="New name."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Rename an event."""
+    from .db import QuorumDB
+    s = _settings(config)
+    with QuorumDB(s.db_path) as db:
+        if not db.get_event(event_id):
+            console.print(f"[red]Event {event_id} not found.[/]")
+            raise typer.Exit(1)
+        db.update_event(event_id, name=name)
+    console.print(f"[green]Renamed event {event_id} to '{name}'[/]")
+
+
 # Global state set by the --cpu-only callback
 _cpu_only_override: bool = False
 

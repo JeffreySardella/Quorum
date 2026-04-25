@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Events - Quorum{% endblock %}
+{% block content %}
+<h1>Events</h1>
+
+<form action="/events" method="get" style="margin-bottom: 1rem;">
+    <div class="grid">
+        <input type="text" name="year" value="{{ year_filter }}" placeholder="Filter by year (e.g. 2024)">
+        <button type="submit">Filter</button>
+    </div>
+</form>
+
+{% if events %}
+<p>{{ events | length }} events</p>
+
+{% for event in events %}
+<article>
+    <header>
+        <strong>{{ event.name }}</strong>
+        <span style="float: right;">
+            {{ event.start_time[:10] if event.start_time else 'Unknown date' }}
+            &mdash; {{ event.media_count }} files
+        </span>
+    </header>
+    {% if event.media %}
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        {% for m in event.media %}
+        <div style="padding: 0.25rem; background: var(--pico-card-background-color); border-radius: 4px; font-size: 0.8em;">
+            {{ m.type }}: {{ m.path.split('/')[-1] if '/' in m.path else m.path.split('\\')[-1] }}
+        </div>
+        {% endfor %}
+        {% if event.media_count > 6 %}
+        <div style="padding: 0.25rem; font-size: 0.8em;">+{{ event.media_count - 6 }} more</div>
+        {% endif %}
+    </div>
+    {% endif %}
+</article>
+{% endfor %}
+
+{% else %}
+<p>No events detected yet. Run <code>quorum events detect</code> to auto-detect events from your library.</p>
+{% endif %}
+{% endblock %}

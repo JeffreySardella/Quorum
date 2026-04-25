@@ -202,6 +202,25 @@ def create_app(settings: Settings, jobs: JobRegistry) -> FastAPI:
                 engine.close()
         return {"results": results, "query": q}
 
+    @app.get("/events", response_class=HTMLResponse)
+    async def events_page(request: Request, year: str = ""):
+        from ..db import QuorumDB
+        try:
+            with QuorumDB(settings.db_path) as db:
+                events = db.list_events()
+                if year:
+                    events = [e for e in events if e.get("start_time", "").startswith(year)]
+                for event in events:
+                    event["media_count"] = len(db.get_event_media(event["id"]))
+                    event["media"] = db.get_event_media(event["id"])[:6]  # thumbnails
+        except Exception:
+            events = []
+        return templates.TemplateResponse("events.html", {
+            "request": request,
+            "events": events,
+            "year_filter": year,
+        })
+
     @app.get("/dedup", response_class=HTMLResponse)
     async def dedup_page(request: Request):
         return templates.TemplateResponse("dedup.html", {
