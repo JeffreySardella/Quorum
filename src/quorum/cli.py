@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json as _json
 import sys
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from rich.console import Console
 from rich.table import Table
 
 from .config import load_settings
+from .db import QuorumDB, migrate_from_legacy
 from .enrich import print_summary as print_enrich_summary
 from .enrich import run_enrich
 from .home_videos import print_summary as print_home_summary
@@ -35,6 +37,62 @@ app = typer.Typer(
     add_completion=False,
 )
 console = Console()
+
+# ------------------------------------------------------------------
+# db sub-command group
+# ------------------------------------------------------------------
+
+db_app = typer.Typer(help="Manage the Quorum metadata index.", no_args_is_help=True)
+app.add_typer(db_app, name="db")
+
+
+@db_app.command()
+def stats(
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Show statistics about the Quorum metadata index."""
+    s = _settings(config)
+    with QuorumDB(s.db_path) as db:
+        data = db.stats()
+    table = Table(title="Quorum DB Stats", show_lines=False)
+    table.add_column("Metric", style="bold")
+    table.add_column("Value", justify="right")
+    table.add_row("Total media", str(data["total_media"]))
+    for media_type, count in data["by_type"].items():
+        table.add_row(f"  {media_type}", str(count))
+    table.add_row("Total size (bytes)", str(data["total_size"]))
+    table.add_row("Total events", str(data["total_events"]))
+    table.add_row("Total tags", str(data["total_tags"]))
+    table.add_row("Pending jobs", str(data["pending_jobs"]))
+    console.print(table)
+
+
+@db_app.command()
+def migrate(
+    root: Path = typer.Argument(..., help="Library root to scan for legacy data."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Import existing .nfo sidecars, faces.db, and watch-state into quorum.db."""
+    s = _settings(config)
+    with QuorumDB(s.db_path) as db:
+        counts = migrate_from_legacy(db, root)
+    console.print("[green]Migration complete:[/]")
+    console.print(f"  Media files indexed: {counts['media_indexed']}")
+    console.print(f"  .nfo files imported: {counts['nfo_imported']}")
+    console.print(f"  Face records imported: {counts['faces_imported']}")
+
+
+@db_app.command("export")
+def db_export(
+    output: Path = typer.Argument(..., help="Output JSON file path."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Export the entire metadata index to a JSON file."""
+    s = _settings(config)
+    with QuorumDB(s.db_path) as db:
+        data = db.export_all()
+    output.write_text(_json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    console.print(f"[green]Exported to {output}[/]")
 
 # Global state set by the --cpu-only callback
 _cpu_only_override: bool = False
