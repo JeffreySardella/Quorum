@@ -782,3 +782,50 @@ class TestSearch:
             assert "sunset" in results[0]["snippet"].lower()
         finally:
             db.close()
+
+
+class TestVectorSearch:
+    def _make_db(self, tmp_db_path: Path) -> QuorumDB:
+        return QuorumDB(tmp_db_path)
+
+    def test_index_and_search_vector(self, tmp_db_path: Path) -> None:
+        db = self._make_db(tmp_db_path)
+        try:
+            m1 = db.insert_media(path="/beach.mkv", media_type="video", size=100)
+            db.set_metadata(m1, "title", "Beach Day")
+            db.index_media_vector(m1, [1.0, 0.0, 0.0, 0.0])
+
+            m2 = db.insert_media(path="/snow.mkv", media_type="video", size=100)
+            db.set_metadata(m2, "title", "Snow Day")
+            db.index_media_vector(m2, [0.0, 1.0, 0.0, 0.0])
+
+            # Query close to beach vector
+            results = db.search_vector([0.9, 0.1, 0.0, 0.0])
+            assert len(results) == 2
+            assert results[0]["path"] == "/beach.mkv"  # closest
+            assert results[0]["score"] > results[1]["score"]
+        finally:
+            db.close()
+
+    def test_vector_search_filter_type(self, tmp_db_path: Path) -> None:
+        db = self._make_db(tmp_db_path)
+        try:
+            m1 = db.insert_media(path="/beach.mkv", media_type="video", size=100)
+            db.index_media_vector(m1, [1.0, 0.0, 0.0, 0.0])
+
+            m2 = db.insert_media(path="/beach.jpg", media_type="photo", size=50)
+            db.index_media_vector(m2, [0.9, 0.1, 0.0, 0.0])
+
+            results = db.search_vector([1.0, 0.0, 0.0, 0.0], media_type="photo")
+            assert len(results) == 1
+            assert results[0]["type"] == "photo"
+        finally:
+            db.close()
+
+    def test_vector_search_empty_db(self, tmp_db_path: Path) -> None:
+        db = self._make_db(tmp_db_path)
+        try:
+            results = db.search_vector([1.0, 0.0, 0.0, 0.0])
+            assert results == []
+        finally:
+            db.close()

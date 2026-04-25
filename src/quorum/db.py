@@ -620,6 +620,96 @@ class QuorumDB:
         return results
 
     # ------------------------------------------------------------------
+    # Vector search (sqlite-vec)
+    # ------------------------------------------------------------------
+
+    def _ensure_vec_table(self, dim: int) -> None:
+        """Create the vec0 virtual table if it doesn't exist."""
+        try:
+            import sqlite_vec
+
+            self.conn.enable_load_extension(True)
+            sqlite_vec.load(self.conn)
+            self.conn.enable_load_extension(False)
+        except (ImportError, Exception):
+            return
+        self.conn.execute(
+            f"CREATE VIRTUAL TABLE IF NOT EXISTS search_vec USING vec0(embedding float[{dim}])"
+        )
+        self.conn.commit()
+        self._vec_dim = dim
+
+    def index_media_vector(self, media_id: int, vector: list[float]) -> None:
+        """Store a search embedding vector for a media item."""
+        import struct
+
+        dim = len(vector)
+        if not hasattr(self, "_vec_dim"):
+            self._ensure_vec_table(dim)
+        vec_bytes = struct.pack(f"{dim}f", *vector)
+        # Delete existing entry for this media_id
+        try:
+            self.conn.execute("DELETE FROM search_vec WHERE rowid = ?", (media_id,))
+        except Exception:
+            pass
+        self.conn.execute(
+            "INSERT INTO search_vec (rowid, embedding) VALUES (?, ?)",
+            (media_id, vec_bytes),
+        )
+        self.conn.commit()
+
+    def search_vector(
+        self,
+        query_vector: list[float],
+        media_type: str | None = None,
+        after: str | None = None,
+        before: str | None = None,
+        limit: int = 20,
+    ) -> list[dict]:
+        """Vector similarity search across indexed media."""
+        import struct
+
+        dim = len(query_vector)
+        vec_bytes = struct.pack(f"{dim}f", *query_vector)
+
+        try:
+            rows = self.conn.execute(
+                "SELECT rowid, distance FROM search_vec WHERE embedding MATCH ? ORDER BY distance LIMIT ?",
+                (vec_bytes, limit * 3),
+            ).fetchall()
+        except Exception:
+            return []
+
+        results = []
+        for rowid, distance in rows:
+            media = self.get_media(rowid)
+            if not media:
+                continue
+            if media_type and media["type"] != media_type:
+                continue
+            if after and (media.get("created_at") or "") < after:
+                continue
+            if before and (media.get("created_at") or "") > before:
+                continue
+
+            # Get snippet from metadata
+            title = self.get_metadata_value(rowid, "title") or ""
+            desc = self.get_metadata_value(rowid, "description") or ""
+            snippet = title
+            if desc:
+                snippet = f"{title} — {desc[:100]}" if title else desc[:150]
+
+            results.append({
+                **media,
+                "score": 1.0 / (1.0 + distance),
+                "snippet": snippet or Path(media["path"]).stem,
+            })
+            if len(results) >= limit:
+                break
+
+        return results
+
+    # ------------------------------------------------------------------
     # Aggregate statistics
     # ------------------------------------------------------------------
 

@@ -14,6 +14,16 @@ class OllamaClient:
     def close(self) -> None:
         self.client.close()
 
+    def embed(self, model: str, text: str) -> list[float]:
+        """Generate an embedding vector for the given text."""
+        resp = self.client.post(
+            f"{self.url}/api/embed",
+            json={"model": model, "input": text},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data["embeddings"][0]
+
     def generate(self, model: str, prompt: str, images: list[Path] | None = None) -> str:
         payload: dict = {"model": model, "prompt": prompt, "stream": False}
         if images:
