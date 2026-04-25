@@ -150,6 +150,58 @@ def create_app(settings: Settings, jobs: JobRegistry) -> FastAPI:
             "request": request,
         })
 
+    @app.get("/search", response_class=HTMLResponse)
+    async def search_page(
+        request: Request, q: str = "", type: str = "", after: str = "", before: str = "",
+    ):
+        results = []
+        if q:
+            from ..db import QuorumDB
+            from ..search import SearchEngine
+
+            with QuorumDB(settings.db_path) as db:
+                engine = SearchEngine(settings, db)
+                try:
+                    results = engine.search(
+                        q,
+                        media_type=type or None,
+                        after=after or None,
+                        before=before or None,
+                    )
+                finally:
+                    engine.close()
+        return templates.TemplateResponse("search.html", {
+            "request": request,
+            "query": q,
+            "results": results,
+            "type_filter": type,
+            "after_filter": after,
+            "before_filter": before,
+        })
+
+    @app.get("/api/search")
+    async def api_search(
+        q: str = "", type: str = "", after: str = "", before: str = "", limit: int = 20,
+    ):
+        if not q:
+            return {"results": [], "query": ""}
+        from ..db import QuorumDB
+        from ..search import SearchEngine
+
+        with QuorumDB(settings.db_path) as db:
+            engine = SearchEngine(settings, db)
+            try:
+                results = engine.search(
+                    q,
+                    media_type=type or None,
+                    after=after or None,
+                    before=before or None,
+                    limit=limit,
+                )
+            finally:
+                engine.close()
+        return {"results": results, "query": q}
+
     @app.get("/dedup", response_class=HTMLResponse)
     async def dedup_page(request: Request):
         return templates.TemplateResponse("dedup.html", {

@@ -144,3 +144,60 @@ class TestDBExport:
         data = json.loads(output.read_text(encoding="utf-8"))
         assert len(data["media"]) == 1
         assert data["media"][0]["path"] == "/a.mkv"
+
+
+class TestSearch:
+    def test_search_empty_db(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "quorum.db"
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'db_path = "{db_path.as_posix()}"', encoding="utf-8")
+        result = runner.invoke(app, ["search", "beach", "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "No results" in result.output
+
+    def test_search_with_results(self, tmp_path: Path) -> None:
+        from quorum.db import QuorumDB
+
+        db_path = tmp_path / "quorum.db"
+        with QuorumDB(db_path) as db:
+            mid = db.insert_media(path="/beach.mkv", media_type="video", size=1000)
+            db.set_metadata(mid, "title", "Beach Day")
+            db.set_metadata(mid, "description", "Family playing at the beach")
+            db.index_media_text(mid)
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'db_path = "{db_path.as_posix()}"', encoding="utf-8")
+        result = runner.invoke(app, ["search", "beach", "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "beach" in result.output.lower()
+
+    def test_search_with_type_filter(self, tmp_path: Path) -> None:
+        from quorum.db import QuorumDB
+
+        db_path = tmp_path / "quorum.db"
+        with QuorumDB(db_path) as db:
+            m1 = db.insert_media(path="/beach.mkv", media_type="video", size=1000)
+            db.set_metadata(m1, "title", "Beach video")
+            db.index_media_text(m1)
+            m2 = db.insert_media(path="/beach.jpg", media_type="photo", size=500)
+            db.set_metadata(m2, "title", "Beach photo")
+            db.index_media_text(m2)
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'db_path = "{db_path.as_posix()}"', encoding="utf-8")
+        result = runner.invoke(app, ["search", "beach", "--type", "photo", "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "photo" in result.output
+
+
+class TestDBIndex:
+    def test_index_command(self, tmp_path: Path) -> None:
+        from quorum.db import QuorumDB
+
+        db_path = tmp_path / "quorum.db"
+        with QuorumDB(db_path) as db:
+            mid = db.insert_media(path="/a.mkv", media_type="video", size=100)
+            db.set_metadata(mid, "title", "Test")
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'db_path = "{db_path.as_posix()}"', encoding="utf-8")
+        result = runner.invoke(app, ["db", "index", "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "Indexing complete" in result.output

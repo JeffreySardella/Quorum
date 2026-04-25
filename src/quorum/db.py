@@ -98,6 +98,12 @@ CREATE TABLE IF NOT EXISTS processing (
     completed_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_processing_status ON processing(status);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5(
+    media_id UNINDEXED,
+    content,
+    tokenize='porter unicode61'
+);
 """
 
 
@@ -515,6 +521,193 @@ class QuorumDB:
         else:
             self.conn.execute("DELETE FROM embeddings WHERE media_id = ?", (media_id,))
         self.conn.commit()
+
+    # ------------------------------------------------------------------
+    # Full-text search
+    # ------------------------------------------------------------------
+
+    def index_media_text(self, media_id: int) -> None:
+        """Build/rebuild the FTS5 search index entry for a single media item."""
+        parts: list[str] = []
+
+        media = self.get_media(media_id)
+        if not media:
+            return
+
+        # Add filename
+        parts.append(
+            Path(media["path"]).stem.replace(".", " ").replace("_", " ").replace("-", " ")
+        )
+
+        # Add all metadata values
+        for meta in self.get_metadata(media_id):
+            if meta["value"]:
+                parts.append(meta["value"])
+
+        # Add all tag values
+        for tag in self.get_tags(media_id):
+            if tag["value"]:
+                parts.append(tag["value"])
+
+        content = " ".join(parts)
+        if not content.strip():
+            return
+
+        # Upsert: delete old entry if exists, insert new
+        self.conn.execute("DELETE FROM search_index WHERE media_id = ?", (media_id,))
+        self.conn.execute(
+            "INSERT INTO search_index (media_id, content) VALUES (?, ?)",
+            (media_id, content),
+        )
+        self.conn.commit()
+
+    def reindex_all(self) -> int:
+        """Rebuild the FTS5 search index for all media."""
+        self.conn.execute("DELETE FROM search_index")
+        count = 0
+        for row in self.conn.execute("SELECT id FROM media").fetchall():
+            self.index_media_text(row[0])
+            count += 1
+        return count
+
+    def search_text(
+        self,
+        query: str,
+        media_type: str | None = None,
+        after: str | None = None,
+        before: str | None = None,
+        limit: int = 20,
+    ) -> list[dict]:
+        """Full-text search across all indexed media content."""
+        sql = """
+            SELECT s.media_id, s.content, bm25(search_index) as score
+            FROM search_index s
+            JOIN media m ON m.id = s.media_id
+            WHERE search_index MATCH ?
+        """
+        params: list = [query]
+
+        if media_type:
+            sql += " AND m.type = ?"
+            params.append(media_type)
+
+        if after:
+            sql += " AND m.created_at >= ?"
+            params.append(after)
+
+        if before:
+            sql += " AND m.created_at <= ?"
+            params.append(before)
+
+        sql += " ORDER BY score LIMIT ?"
+        params.append(limit)
+
+        self.conn.row_factory = sqlite3.Row
+        rows = self.conn.execute(sql, params).fetchall()
+        self.conn.row_factory = None
+
+        results = []
+        for row in rows:
+            media = self.get_media(row["media_id"])
+            if media:
+                content = row["content"]
+                snippet = content[:150] + "..." if len(content) > 150 else content
+                results.append({
+                    **media,
+                    "score": abs(row["score"]),
+                    "snippet": snippet,
+                })
+        return results
+
+    # ------------------------------------------------------------------
+    # Vector search (sqlite-vec)
+    # ------------------------------------------------------------------
+
+    def _ensure_vec_table(self, dim: int) -> None:
+        """Create the vec0 virtual table if it doesn't exist."""
+        try:
+            import sqlite_vec
+
+            self.conn.enable_load_extension(True)
+            sqlite_vec.load(self.conn)
+            self.conn.enable_load_extension(False)
+        except (ImportError, Exception):
+            return
+        self.conn.execute(
+            f"CREATE VIRTUAL TABLE IF NOT EXISTS search_vec USING vec0(embedding float[{dim}])"
+        )
+        self.conn.commit()
+        self._vec_dim = dim
+
+    def index_media_vector(self, media_id: int, vector: list[float]) -> None:
+        """Store a search embedding vector for a media item."""
+        import struct
+
+        dim = len(vector)
+        if not hasattr(self, "_vec_dim"):
+            self._ensure_vec_table(dim)
+        vec_bytes = struct.pack(f"{dim}f", *vector)
+        # Delete existing entry for this media_id
+        try:
+            self.conn.execute("DELETE FROM search_vec WHERE rowid = ?", (media_id,))
+        except Exception:
+            pass
+        self.conn.execute(
+            "INSERT INTO search_vec (rowid, embedding) VALUES (?, ?)",
+            (media_id, vec_bytes),
+        )
+        self.conn.commit()
+
+    def search_vector(
+        self,
+        query_vector: list[float],
+        media_type: str | None = None,
+        after: str | None = None,
+        before: str | None = None,
+        limit: int = 20,
+    ) -> list[dict]:
+        """Vector similarity search across indexed media."""
+        import struct
+
+        dim = len(query_vector)
+        vec_bytes = struct.pack(f"{dim}f", *query_vector)
+
+        try:
+            rows = self.conn.execute(
+                "SELECT rowid, distance FROM search_vec WHERE embedding MATCH ? ORDER BY distance LIMIT ?",
+                (vec_bytes, limit * 3),
+            ).fetchall()
+        except Exception:
+            return []
+
+        results = []
+        for rowid, distance in rows:
+            media = self.get_media(rowid)
+            if not media:
+                continue
+            if media_type and media["type"] != media_type:
+                continue
+            if after and (media.get("created_at") or "") < after:
+                continue
+            if before and (media.get("created_at") or "") > before:
+                continue
+
+            # Get snippet from metadata
+            title = self.get_metadata_value(rowid, "title") or ""
+            desc = self.get_metadata_value(rowid, "description") or ""
+            snippet = title
+            if desc:
+                snippet = f"{title} — {desc[:100]}" if title else desc[:150]
+
+            results.append({
+                **media,
+                "score": 1.0 / (1.0 + distance),
+                "snippet": snippet or Path(media["path"]).stem,
+            })
+            if len(results) >= limit:
+                break
+
+        return results
 
     # ------------------------------------------------------------------
     # Aggregate statistics
