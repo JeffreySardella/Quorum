@@ -540,6 +540,68 @@ class QuorumDB:
             "pending_jobs": pending_jobs,
         }
 
+    def dashboard_stats(self) -> dict:
+        """Rich stats for the dashboard — extends basic stats with breakdowns."""
+        base = self.stats()
+
+        # Files by year (from created_at, extract year)
+        by_year: dict[str, int] = {}
+        for row in self.conn.execute(
+            "SELECT SUBSTR(created_at, 1, 4) AS yr, COUNT(*) FROM media "
+            "WHERE created_at IS NOT NULL GROUP BY yr ORDER BY yr"
+        ):
+            if row[0]:
+                by_year[row[0]] = row[1]
+
+        # Storage by type (bytes)
+        storage_by_type: dict[str, int] = {}
+        for row in self.conn.execute(
+            "SELECT type, COALESCE(SUM(size), 0) FROM media GROUP BY type"
+        ):
+            storage_by_type[row[0]] = row[1]
+
+        # Top faces by tag count
+        top_faces: list[dict] = []
+        for row in self.conn.execute(
+            "SELECT value, COUNT(*) as cnt FROM tags WHERE category = 'face' "
+            "GROUP BY value ORDER BY cnt DESC LIMIT 10"
+        ):
+            top_faces.append({"name": row[0], "count": row[1]})
+
+        # Recent actions (last 50)
+        self.conn.row_factory = sqlite3.Row
+        recent_actions = [dict(r) for r in self.conn.execute(
+            "SELECT * FROM actions ORDER BY id DESC LIMIT 50"
+        ).fetchall()]
+        self.conn.row_factory = None
+
+        # Confidence distribution (histogram buckets: 0-0.1, 0.1-0.2, ..., 0.9-1.0)
+        confidence_dist: list[int] = [0] * 10
+        for row in self.conn.execute(
+            "SELECT confidence FROM signals"
+        ):
+            bucket = min(int(row[0] * 10), 9)
+            confidence_dist[bucket] += 1
+
+        # Events per month
+        events_by_month: dict[str, int] = {}
+        for row in self.conn.execute(
+            "SELECT SUBSTR(start_time, 1, 7) AS mo, COUNT(*) FROM events "
+            "WHERE start_time IS NOT NULL GROUP BY mo ORDER BY mo"
+        ):
+            if row[0]:
+                events_by_month[row[0]] = row[1]
+
+        return {
+            **base,
+            "by_year": by_year,
+            "storage_by_type": storage_by_type,
+            "top_faces": top_faces,
+            "recent_actions": recent_actions,
+            "confidence_dist": confidence_dist,
+            "events_by_month": events_by_month,
+        }
+
     def export_all(self) -> dict:
         media = self.list_media()
         for m in media:

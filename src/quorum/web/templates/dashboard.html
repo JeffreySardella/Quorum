@@ -22,6 +22,31 @@
         <p>Processing mode</p>
     </article>
 
+    {% if db_stats %}
+    <article class="stat-card">
+        <p>Media Files</p>
+        <h3>{{ db_stats.total_media }}</h3>
+        <p>{% for t, c in db_stats.by_type.items() %}{{ t }}: {{ c }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+    </article>
+
+    <article class="stat-card">
+        <p>Storage</p>
+        <h3>{{ "%.1f"|format(db_stats.total_size / (1024**3)) }} GB</h3>
+        <p>Across all media</p>
+    </article>
+
+    <article class="stat-card">
+        <p>Events</p>
+        <h3>{{ db_stats.total_events }}</h3>
+        <p>Auto-detected groups</p>
+    </article>
+
+    <article class="stat-card">
+        <p>Pending Jobs</p>
+        <h3>{{ db_stats.pending_jobs }}</h3>
+        <p>In processing queue</p>
+    </article>
+    {% else %}
     <article class="stat-card">
         <p>Watch Inboxes</p>
         <h3>{{ settings.watch.inboxes | length }}</h3>
@@ -33,7 +58,95 @@
         <h3>{{ jobs | selectattr("status", "equalto", "running") | list | length }}</h3>
         <p>Background tasks</p>
     </article>
+    {% endif %}
 </div>
+
+{% if db_stats %}
+<div class="grid">
+    {% if db_stats.by_type %}
+    <div>
+        <h2>Files by Type</h2>
+        <table>
+            <thead><tr><th>Type</th><th>Count</th><th>Size</th></tr></thead>
+            <tbody>
+                {% for t, c in db_stats.by_type.items() | sort %}
+                <tr>
+                    <td>{{ t }}</td>
+                    <td>{{ c }}</td>
+                    <td>{{ "%.1f"|format(db_stats.storage_by_type.get(t, 0) / (1024**2)) }} MB</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    {% if db_stats.by_year %}
+    <div>
+        <h2>Files by Year</h2>
+        <table>
+            <thead><tr><th>Year</th><th>Count</th></tr></thead>
+            <tbody>
+                {% for yr, c in db_stats.by_year.items() | sort %}
+                <tr><td>{{ yr }}</td><td>{{ c }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+
+{% if db_stats.top_faces %}
+<h2>Top Faces</h2>
+<table>
+    <thead><tr><th>Person</th><th>Appearances</th></tr></thead>
+    <tbody>
+        {% for face in db_stats.top_faces %}
+        <tr><td>{{ face.name }}</td><td>{{ face.count }}</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+{% if db_stats.confidence_dist and db_stats.confidence_dist | sum > 0 %}
+<h2>Signal Confidence Distribution</h2>
+<table>
+    <thead><tr><th>Range</th><th>Count</th><th>Distribution</th></tr></thead>
+    <tbody>
+        {% set max_conf = db_stats.confidence_dist | max %}
+        {% for count in db_stats.confidence_dist %}
+        {% set low = loop.index0 / 10 %}
+        {% set high = (loop.index0 + 1) / 10 %}
+        <tr>
+            <td>{{ "%.1f"|format(low) }}-{{ "%.1f"|format(high) }}</td>
+            <td>{{ count }}</td>
+            <td>
+                {% if max_conf > 0 %}
+                <div style="background: var(--pico-primary); height: 1em; width: {{ (count / max_conf * 100) | int }}%;"></div>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+{% if db_stats.recent_actions %}
+<h2>Recent Activity</h2>
+<table>
+    <thead><tr><th>Time</th><th>Action</th><th>File</th></tr></thead>
+    <tbody>
+        {% for action in db_stats.recent_actions[:20] %}
+        <tr>
+            <td>{{ action.created_at[:19] if action.created_at else '-' }}</td>
+            <td>{{ action.operation }}</td>
+            <td>{{ action.source_path.split('/')[-1] if action.source_path else '-' }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endif %}
 
 <h2>Configuration</h2>
 <table>
@@ -49,8 +162,7 @@
 </table>
 
 <h2>Recent Jobs</h2>
-<div hx-get="/api/status" hx-trigger="every 10s" hx-swap="none">
-</div>
+<div hx-get="/api/status" hx-trigger="every 10s" hx-swap="none"></div>
 {% if jobs %}
 <table>
     <thead><tr><th>Name</th><th>Status</th><th>Started</th><th>Finished</th></tr></thead>

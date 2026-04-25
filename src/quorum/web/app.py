@@ -98,11 +98,19 @@ def create_app(settings: Settings, jobs: JobRegistry) -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request):
         ollama = _ollama_ok(settings.ollama_url)
+        # Load library stats from QuorumDB
+        from ..db import QuorumDB
+        try:
+            with QuorumDB(settings.db_path) as db:
+                db_stats = db.dashboard_stats()
+        except Exception:
+            db_stats = None
         return templates.TemplateResponse("dashboard.html", {
             "request": request,
             "settings": settings,
             "ollama_ok": ollama,
             "jobs": jobs.list_all(),
+            "db_stats": db_stats,
         })
 
     @app.get("/commands", response_class=HTMLResponse)
@@ -172,6 +180,15 @@ def create_app(settings: Settings, jobs: JobRegistry) -> FastAPI:
             "watch_inboxes": len(settings.watch.inboxes),
             "cpu_only": settings.cpu_only,
         }
+
+    @app.get("/api/dashboard/stats")
+    async def api_dashboard_stats():
+        from ..db import QuorumDB
+        try:
+            with QuorumDB(settings.db_path) as db:
+                return db.dashboard_stats()
+        except Exception as e:
+            return {"error": str(e)}
 
     @app.post("/api/commands/run")
     async def api_run_command(
