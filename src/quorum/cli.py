@@ -1504,5 +1504,155 @@ def desktop_stats_cmd(
     console.print(f"Total: {stats['file_count']} files, {size_mb:.1f} MB")
 
 
+projects_app = typer.Typer(help="Detect and organize project files.", no_args_is_help=True)
+app.add_typer(projects_app, name="projects")
+
+
+@projects_app.command("scan")
+def projects_scan(
+    src: Path = typer.Argument(..., help="Directory to scan for project clusters."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Detect groups of related project files."""
+    from .plugins.projects import ProjectPlugin
+    plugin = ProjectPlugin()
+    plugin.on_register({})
+    files = [f for f in src.rglob("*")]
+    proposals = plugin.on_scan(files)
+    if not proposals:
+        console.print("[green]No project clusters detected.[/]")
+        return
+    projects: dict[str, list] = {}
+    for p in proposals:
+        proj = p.metadata.get("project", "?")
+        projects.setdefault(proj, []).append(p)
+    for proj_name, items in projects.items():
+        t = Table(title=f"Project: {proj_name}")
+        t.add_column("file")
+        t.add_column("→ suggestion")
+        for p in items:
+            t.add_row(Path(p.source_path).name, p.dest_path)
+        console.print(t)
+    console.print(
+        f"\n[dim]{len(projects)} project clusters, {len(proposals)} files. "
+        "Use 'quorum projects gather' to consolidate.[/]"
+    )
+
+
+email_app = typer.Typer(help="Import and organize email attachments.", no_args_is_help=True)
+app.add_typer(email_app, name="email")
+
+
+@email_app.command("import")
+def email_import(
+    archive: Path = typer.Argument(..., help="Path to .mbox file or Maildir directory."),
+    dest: Path = typer.Option(None, "--dest", "-d", help="Destination root."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without extracting."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Import attachments from an email archive."""
+    from .plugins.email_import import EmailPlugin
+    if not archive.exists():
+        console.print(f"[red]Archive not found: {archive}[/]")
+        raise typer.Exit(1)
+    plugin = EmailPlugin()
+    plugin.on_register({"dest_root": dest} if dest else {})
+    proposals = plugin.on_scan([archive])
+    if not proposals:
+        console.print("[yellow]No attachments found in archive.[/]")
+        return
+    t = Table(title=f"Email Attachments ({len(proposals)} found)")
+    t.add_column("filename")
+    t.add_column("sender")
+    t.add_column("date")
+    t.add_column("size", justify="right")
+    for p in proposals:
+        t.add_row(
+            p.metadata.get("filename", "?"),
+            p.metadata.get("sender", "?")[:30],
+            p.metadata.get("date", "?"),
+            str(p.metadata.get("size", 0)),
+        )
+    console.print(t)
+    if not dry_run and dest:
+        results = plugin.on_apply(proposals)
+        extracted = sum(1 for r in results if r["status"] == "extracted")
+        console.print(f"[green]Extracted {extracted} attachments[/]")
+    elif not dry_run:
+        console.print("[dim]Use --dest to specify extraction directory, or --dry-run to preview.[/]")
+
+
+@email_app.command("stats")
+def email_stats_cmd(
+    archive: Path = typer.Argument(..., help="Path to .mbox file."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Show attachment statistics for an email archive."""
+    from .plugins.email_import import email_stats
+    if not archive.exists():
+        console.print(f"[red]Archive not found: {archive}[/]")
+        raise typer.Exit(1)
+    stats = email_stats(archive)
+    console.print(f"Attachments: {stats['total_attachments']}")
+    console.print(f"Total size: {stats['total_size'] / 1024:.1f} KB")
+    console.print(f"Unique senders: {stats['unique_senders']}")
+    if stats["top_senders"]:
+        console.print("Top senders:")
+        for sender, count in stats["top_senders"]:
+            console.print(f"  {sender}: {count}")
+
+
+@app.command()
+def organize(
+    path: Path = typer.Argument(..., help="Directory to organize."),
+    dest: Path = typer.Option(None, "--dest", "-d", help="Destination root."),
+    plugin: str = typer.Option(None, "--type", "-t", help="Force specific plugin (music, documents, etc)."),
+    rules_file: Path = typer.Option(None, "--rules", help="Custom rules config file."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without moving."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Organize any directory — auto-detects file types and routes them."""
+    import tomllib
+    from .db import QuorumDB
+    from .organize_anything import organize as do_organize
+    s = _settings(config)
+
+    rules_config: dict = {}
+    if rules_file and rules_file.exists():
+        rules_config = tomllib.loads(rules_file.read_text(encoding="utf-8"))
+
+    with QuorumDB(s.db_path) as db:
+        result = do_organize(
+            path, db, dest=dest, plugin_name=plugin,
+            rules_config=rules_config, dry_run=dry_run,
+        )
+
+    if "error" in result:
+        console.print(f"[red]{result['error']}[/]")
+        raise typer.Exit(1)
+
+    console.print(f"Files scanned: {result['files_scanned']}")
+    console.print(f"Rule matches: {result['rule_matches']}")
+    console.print(f"Plugin matches: {result['plugin_matches']}")
+
+    if result["proposals"]:
+        t = Table(title="Organization Proposals" + (" (DRY RUN)" if dry_run else ""))
+        t.add_column("file")
+        t.add_column("source")
+        t.add_column("→ destination")
+        for p in result["proposals"][:50]:
+            src_name = Path(p.source_path).name
+            source = p.metadata.get("source", "?")
+            if source == "rule":
+                source = f"rule:{p.metadata.get('rule_name', '?')}"
+            t.add_row(src_name, source, p.dest_path)
+        console.print(t)
+
+    if not dry_run and result.get("applied"):
+        console.print(f"[green]Organized {result['applied']} files[/]")
+    elif not dry_run and not dest:
+        console.print("[dim]Use --dest to specify where to organize files, or --dry-run to preview.[/]")
+
+
 if __name__ == "__main__":
     app()
