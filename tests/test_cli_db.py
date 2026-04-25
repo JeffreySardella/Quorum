@@ -441,3 +441,18 @@ class TestSignalsCommands:
             os.chdir(old_cwd)
         assert result.exit_code == 0
         assert "reset" in result.output.lower()
+
+
+class TestPluginsCommands:
+    def test_plugins_list_empty(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "config.toml"
+        config_path.write_text('db_path = "quorum.db"', encoding="utf-8")
+        result = runner.invoke(app, ["plugins", "list", "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "No plugins" in result.output or "Registered" in result.output
+
+    def test_plugins_info_missing(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "config.toml"
+        config_path.write_text('db_path = "quorum.db"', encoding="utf-8")
+        result = runner.invoke(app, ["plugins", "info", "nonexistent", "--config", str(config_path)])
+        assert result.exit_code == 1
