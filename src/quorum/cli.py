@@ -467,6 +467,87 @@ def collections(
 
 
 @app.command()
+def dashboard(
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Show a rich dashboard overview of your media library."""
+    from .db import QuorumDB
+    s = _settings(config)
+    with QuorumDB(s.db_path) as db:
+        stats = db.dashboard_stats()
+
+    from rich.panel import Panel
+    from rich.text import Text
+
+    # Key metrics panel
+    metrics = Text()
+    metrics.append(f"  Total files: {stats['total_media']}\n")
+    total_gb = stats['total_size'] / (1024 ** 3)
+    metrics.append(f"  Total size:  {total_gb:.2f} GB\n")
+    metrics.append(f"  Events:      {stats['total_events']}\n")
+    metrics.append(f"  Tags:        {stats['total_tags']}\n")
+    metrics.append(f"  Pending:     {stats['pending_jobs']}\n")
+    console.print(Panel(metrics, title="Library Overview"))
+
+    # Files by type
+    if stats["by_type"]:
+        t = Table(title="Files by Type")
+        t.add_column("type")
+        t.add_column("count", justify="right")
+        t.add_column("size", justify="right")
+        for media_type, count in sorted(stats["by_type"].items()):
+            size_mb = stats["storage_by_type"].get(media_type, 0) / (1024 ** 2)
+            t.add_row(media_type, str(count), f"{size_mb:.1f} MB")
+        console.print(t)
+
+    # Files by year
+    if stats["by_year"]:
+        t = Table(title="Files by Year")
+        t.add_column("year")
+        t.add_column("count", justify="right")
+        for year, count in sorted(stats["by_year"].items()):
+            t.add_row(year, str(count))
+        console.print(t)
+
+    # Top faces
+    if stats["top_faces"]:
+        t = Table(title="Top Faces")
+        t.add_column("person")
+        t.add_column("appearances", justify="right")
+        for face in stats["top_faces"]:
+            t.add_row(face["name"], str(face["count"]))
+        console.print(t)
+
+    # Confidence distribution
+    if any(stats["confidence_dist"]):
+        t = Table(title="Confidence Distribution")
+        t.add_column("range")
+        t.add_column("count", justify="right")
+        t.add_column("bar")
+        max_val = max(stats["confidence_dist"]) or 1
+        for i, count in enumerate(stats["confidence_dist"]):
+            low = i / 10
+            high = (i + 1) / 10
+            bar_len = int(count / max_val * 20) if max_val else 0
+            t.add_row(f"{low:.1f}-{high:.1f}", str(count), "█" * bar_len)
+        console.print(t)
+
+    # Recent activity
+    if stats["recent_actions"]:
+        t = Table(title=f"Recent Activity (last {len(stats['recent_actions'])})")
+        t.add_column("time")
+        t.add_column("action")
+        t.add_column("source")
+        for action in stats["recent_actions"][:20]:
+            t.add_row(
+                action.get("created_at", "")[:19],
+                action.get("operation", ""),
+                Path(action.get("source_path", "")).name,
+            )
+        console.print(t)
+
+
+@app.command()
 def gui():
     """Launch the Quorum desktop GUI (customtkinter wrapper over all commands)."""
     from .gui import main as gui_main

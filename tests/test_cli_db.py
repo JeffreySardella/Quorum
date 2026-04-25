@@ -101,6 +101,29 @@ class TestDBMigrate:
             assert any(t["value"] == "Sophia" for t in tags)
 
 
+class TestDashboard:
+    def test_dashboard_empty(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "quorum.db"
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'db_path = "{db_path.as_posix()}"', encoding="utf-8")
+        result = runner.invoke(app, ["dashboard", "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "Library Overview" in result.output
+
+    def test_dashboard_with_data(self, tmp_path: Path) -> None:
+        from quorum.db import QuorumDB
+        db_path = tmp_path / "quorum.db"
+        with QuorumDB(db_path) as db:
+            db.insert_media(path="/a.mkv", media_type="video", size=1000, created_at="2024-06-15T10:00:00")
+            db.insert_tag(1, "face", "Sophia")
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'db_path = "{db_path.as_posix()}"', encoding="utf-8")
+        result = runner.invoke(app, ["dashboard", "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "video" in result.output
+        assert "Sophia" in result.output
+
+
 class TestDBExport:
     def test_export_json(self, tmp_path: Path) -> None:
         from quorum.db import QuorumDB
