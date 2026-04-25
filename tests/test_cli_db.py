@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -31,9 +32,6 @@ class TestDBStats:
         assert "2" in result.output
         assert "video" in result.output
         assert "photo" in result.output
-
-
-import xml.etree.ElementTree as ET
 
 
 def _write_nfo(path: Path, title: str, plot: str, year: int | None = None) -> None:

@@ -419,7 +419,7 @@ class TestProcessingCRUD:
         db = self._make_db(tmp_db_path)
         try:
             j1 = db.insert_job("enrich", started_at="2024-01-01T00:00:00")
-            j2 = db.insert_job("auto", started_at="2024-01-01T00:00:00")
+            db.insert_job("auto", started_at="2024-01-01T00:00:00")
             db.update_job(j1, status="completed")
             pending = db.list_jobs(status="pending")
             assert len(pending) == 1
