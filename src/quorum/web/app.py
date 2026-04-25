@@ -223,8 +223,17 @@ def create_app(settings: Settings, jobs: JobRegistry) -> FastAPI:
 
     @app.get("/dedup", response_class=HTMLResponse)
     async def dedup_page(request: Request):
+        from ..dedup import load_report
+        report = None
+        report_path = Path("dedup-report.json")
+        if report_path.exists():
+            try:
+                report = load_report(report_path)
+            except Exception:
+                pass
         return templates.TemplateResponse("dedup.html", {
             "request": request,
+            "report": report,
         })
 
     @app.get("/logs", response_class=HTMLResponse)
