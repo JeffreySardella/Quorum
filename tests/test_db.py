@@ -668,3 +668,117 @@ class TestContextManager:
         import sqlite3 as _sql
         with pytest.raises(_sql.ProgrammingError):
             db.conn.execute("SELECT 1")
+
+
+class TestSearch:
+    def _make_db(self, tmp_db_path: Path) -> QuorumDB:
+        return QuorumDB(tmp_db_path)
+
+    def test_index_and_search(self, tmp_db_path: Path) -> None:
+        db = self._make_db(tmp_db_path)
+        try:
+            mid = db.insert_media(path="/beach.mkv", media_type="video", size=100, created_at="2024-06-15T10:00:00")
+            db.set_metadata(mid, "title", "Beach Day")
+            db.set_metadata(mid, "description", "Family playing at the beach with sandcastles")
+            db.insert_tag(mid, "scene", "beach")
+            db.insert_tag(mid, "face", "Sophia")
+            db.index_media_text(mid)
+
+            results = db.search_text("beach")
+            assert len(results) == 1
+            assert results[0]["id"] == mid
+        finally:
+            db.close()
+
+    def test_search_returns_no_results(self, tmp_db_path: Path) -> None:
+        db = self._make_db(tmp_db_path)
+        try:
+            mid = db.insert_media(path="/beach.mkv", media_type="video", size=100)
+            db.set_metadata(mid, "title", "Beach Day")
+            db.index_media_text(mid)
+
+            results = db.search_text("mountains")
+            assert len(results) == 0
+        finally:
+            db.close()
+
+    def test_search_filter_by_type(self, tmp_db_path: Path) -> None:
+        db = self._make_db(tmp_db_path)
+        try:
+            m1 = db.insert_media(path="/beach.mkv", media_type="video", size=100)
+            db.set_metadata(m1, "title", "Beach video")
+            db.index_media_text(m1)
+
+            m2 = db.insert_media(path="/beach.jpg", media_type="photo", size=50)
+            db.set_metadata(m2, "title", "Beach photo")
+            db.index_media_text(m2)
+
+            results = db.search_text("beach", media_type="photo")
+            assert len(results) == 1
+            assert results[0]["type"] == "photo"
+        finally:
+            db.close()
+
+    def test_search_filter_by_date(self, tmp_db_path: Path) -> None:
+        db = self._make_db(tmp_db_path)
+        try:
+            m1 = db.insert_media(path="/old.mkv", media_type="video", size=100, created_at="2020-01-01T00:00:00")
+            db.set_metadata(m1, "title", "Beach trip old")
+            db.index_media_text(m1)
+
+            m2 = db.insert_media(path="/new.mkv", media_type="video", size=100, created_at="2024-06-15T00:00:00")
+            db.set_metadata(m2, "title", "Beach trip new")
+            db.index_media_text(m2)
+
+            results = db.search_text("beach", after="2023-01-01")
+            assert len(results) == 1
+            assert "new" in results[0]["path"]
+        finally:
+            db.close()
+
+    def test_reindex_all(self, tmp_db_path: Path) -> None:
+        db = self._make_db(tmp_db_path)
+        try:
+            m1 = db.insert_media(path="/a.mkv", media_type="video", size=100)
+            db.set_metadata(m1, "title", "First video")
+            m2 = db.insert_media(path="/b.mkv", media_type="video", size=100)
+            db.set_metadata(m2, "title", "Second video")
+
+            count = db.reindex_all()
+            assert count == 2
+
+            results = db.search_text("first")
+            assert len(results) == 1
+        finally:
+            db.close()
+
+    def test_search_includes_tags(self, tmp_db_path: Path) -> None:
+        db = self._make_db(tmp_db_path)
+        try:
+            mid = db.insert_media(path="/family.mkv", media_type="video", size=100)
+            db.set_metadata(mid, "title", "Home video")
+            db.insert_tag(mid, "face", "Sophia")
+            db.insert_tag(mid, "scene", "birthday party")
+            db.index_media_text(mid)
+
+            results = db.search_text("Sophia")
+            assert len(results) == 1
+
+            results = db.search_text("birthday")
+            assert len(results) == 1
+        finally:
+            db.close()
+
+    def test_search_snippet(self, tmp_db_path: Path) -> None:
+        db = self._make_db(tmp_db_path)
+        try:
+            mid = db.insert_media(path="/a.mkv", media_type="video", size=100)
+            db.set_metadata(mid, "description", "A beautiful sunset at the beach")
+            db.index_media_text(mid)
+
+            results = db.search_text("sunset")
+            assert len(results) == 1
+            assert "snippet" in results[0]
+            assert "sunset" in results[0]["snippet"].lower()
+        finally:
+            db.close()
