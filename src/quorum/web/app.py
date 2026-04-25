@@ -121,22 +121,67 @@ def create_app(settings: Settings, jobs: JobRegistry) -> FastAPI:
         })
 
     @app.get("/review", response_class=HTMLResponse)
-    async def review_page(request: Request):
-        queue_path = settings.paths.review_queue
-        proposals: list[dict] = []
-        if queue_path.exists():
-            for line in queue_path.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if line:
-                    try:
-                        proposals.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        pass
+    async def review_page(request: Request, type: str = "", sort: str = "confidence"):
+        from ..db import QuorumDB
+        queue = []
+        stats = {}
+        try:
+            with QuorumDB(settings.db_path) as db:
+                queue = db.get_review_queue(sort=sort, media_type=type or None, limit=50)
+                stats = db.review_stats()
+                # Enrich each item with signal details
+                for item in queue:
+                    signals = db.get_signals(item["id"])
+                    item["signals"] = signals
+                    item["top_candidate"] = max(signals, key=lambda s: s["confidence"])["candidate"] if signals else ""
+        except Exception:
+            pass
         return templates.TemplateResponse("review.html", {
             "request": request,
-            "proposals": proposals,
-            "queue_path": str(queue_path),
+            "queue": queue,
+            "stats": stats,
+            "type_filter": type,
+            "sort": sort,
         })
+
+    @app.post("/api/review/{media_id}/approve")
+    async def api_review_approve(media_id: int):
+        from datetime import datetime
+
+        from ..db import QuorumDB
+        with QuorumDB(settings.db_path) as db:
+            item = db.get_review_item(media_id)
+            if not item:
+                raise HTTPException(404, "Media not found")
+            candidate = item["top_candidate"] or "unknown"
+            db.insert_feedback(media_id, "approve", candidate, created_at=datetime.now().isoformat(timespec="seconds"))
+        return {"status": "approved", "candidate": candidate}
+
+    @app.post("/api/review/{media_id}/reject")
+    async def api_review_reject(media_id: int):
+        from datetime import datetime
+
+        from ..db import QuorumDB
+        with QuorumDB(settings.db_path) as db:
+            item = db.get_review_item(media_id)
+            if not item:
+                raise HTTPException(404, "Media not found")
+            candidate = item["top_candidate"] or "unknown"
+            db.insert_feedback(media_id, "reject", candidate, created_at=datetime.now().isoformat(timespec="seconds"))
+        return {"status": "rejected", "candidate": candidate}
+
+    @app.post("/api/review/{media_id}/correct")
+    async def api_review_correct(media_id: int, title: str = Form(...)):
+        from datetime import datetime
+
+        from ..db import QuorumDB
+        with QuorumDB(settings.db_path) as db:
+            item = db.get_review_item(media_id)
+            if not item:
+                raise HTTPException(404, "Media not found")
+            original = item["top_candidate"] or "unknown"
+            db.insert_feedback(media_id, "correct", original, correction=title, created_at=datetime.now().isoformat(timespec="seconds"))
+        return {"status": "corrected", "title": title}
 
     @app.get("/library", response_class=HTMLResponse)
     async def library_page(request: Request):
