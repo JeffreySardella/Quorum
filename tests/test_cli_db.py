@@ -296,3 +296,74 @@ class TestDedupCommands:
             os.chdir(old_cwd)
         assert result.exit_code == 0
         assert "Duplicate clusters: 1" in result.output
+
+
+class TestReviewCommands:
+    def test_review_empty(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "quorum.db"
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'db_path = "{db_path.as_posix()}"', encoding="utf-8")
+        result = runner.invoke(app, ["review", "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "No items pending" in result.output
+
+    def test_review_with_items(self, tmp_path: Path) -> None:
+        from quorum.db import QuorumDB
+        db_path = tmp_path / "quorum.db"
+        with QuorumDB(db_path) as db:
+            mid = db.insert_media(path="/test.mkv", media_type="video", size=100)
+            db.insert_signal(mid, "filename", "The Matrix", 0.7, "", "2024-01-01T00:00:00")
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'db_path = "{db_path.as_posix()}"', encoding="utf-8")
+        result = runner.invoke(app, ["review", "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "Review Queue" in result.output
+
+    def test_review_stats(self, tmp_path: Path) -> None:
+        from quorum.db import QuorumDB
+        db_path = tmp_path / "quorum.db"
+        with QuorumDB(db_path) as db:
+            mid = db.insert_media(path="/a.mkv", media_type="video", size=100)
+            db.insert_signal(mid, "f", "X", 0.7, "", "2024-01-01T00:00:00")
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'db_path = "{db_path.as_posix()}"', encoding="utf-8")
+        result = runner.invoke(app, ["review", "--stats", "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "Pending" in result.output
+
+    def test_approve(self, tmp_path: Path) -> None:
+        from quorum.db import QuorumDB
+        db_path = tmp_path / "quorum.db"
+        with QuorumDB(db_path) as db:
+            mid = db.insert_media(path="/a.mkv", media_type="video", size=100)
+            db.insert_signal(mid, "filename", "The Matrix", 0.9, "", "2024-01-01T00:00:00")
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'db_path = "{db_path.as_posix()}"', encoding="utf-8")
+        result = runner.invoke(app, ["approve", "1", "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "Approved" in result.output
+
+    def test_reject(self, tmp_path: Path) -> None:
+        from quorum.db import QuorumDB
+        db_path = tmp_path / "quorum.db"
+        with QuorumDB(db_path) as db:
+            mid = db.insert_media(path="/a.mkv", media_type="video", size=100)
+            db.insert_signal(mid, "filename", "Test", 0.5, "", "2024-01-01T00:00:00")
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'db_path = "{db_path.as_posix()}"', encoding="utf-8")
+        result = runner.invoke(app, ["reject", "1", "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "Rejected" in result.output
+
+    def test_correct(self, tmp_path: Path) -> None:
+        from quorum.db import QuorumDB
+        db_path = tmp_path / "quorum.db"
+        with QuorumDB(db_path) as db:
+            mid = db.insert_media(path="/a.mkv", media_type="video", size=100)
+            db.insert_signal(mid, "filename", "The Matri", 0.5, "", "2024-01-01T00:00:00")
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'db_path = "{db_path.as_posix()}"', encoding="utf-8")
+        result = runner.invoke(app, ["correct", "1", "The Matrix (1999)", "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "Corrected" in result.output
+        assert "The Matrix (1999)" in result.output

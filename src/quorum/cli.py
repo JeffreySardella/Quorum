@@ -844,5 +844,125 @@ def dedup_apply(
     console.print(f"  Holding dir: {holding}")
 
 
+@app.command("review")
+def review_cmd(
+    count: int = typer.Option(10, "--count", "-n", help="Number of items to show."),
+    sort: str = typer.Option("confidence", "--sort", "-s", help="Sort: confidence or newest."),
+    type: str = typer.Option(None, "--type", "-t", help="Filter by media type."),
+    stats_only: bool = typer.Option(False, "--stats", help="Show stats only."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Show items pending review."""
+    from .db import QuorumDB
+    s = _settings(config)
+    with QuorumDB(s.db_path) as db:
+        if stats_only:
+            st = db.review_stats()
+            t = Table(title="Review Stats")
+            t.add_column("metric")
+            t.add_column("count", justify="right")
+            t.add_row("Total with signals", str(st["total_with_signals"]))
+            t.add_row("[green]Approved[/]", str(st["approved"]))
+            t.add_row("[red]Rejected[/]", str(st["rejected"]))
+            t.add_row("[yellow]Corrected[/]", str(st["corrected"]))
+            t.add_row("[bold]Pending[/]", str(st["pending"]))
+            console.print(t)
+            return
+
+        queue = db.get_review_queue(sort=sort, media_type=type, limit=count)
+
+    if not queue:
+        console.print("[green]No items pending review.[/]")
+        return
+
+    t = Table(title=f"Review Queue ({len(queue)} items)")
+    t.add_column("ID", justify="right")
+    t.add_column("type")
+    t.add_column("confidence", justify="right")
+    t.add_column("candidates")
+    t.add_column("file")
+    for item in queue:
+        conf = f"{item.get('max_conf', 0):.2f}"
+        candidates = item.get("candidates", "")[:50]
+        name = Path(item["path"]).name
+        t.add_row(str(item["id"]), item["type"], conf, candidates, name)
+    console.print(t)
+    console.print("[dim]Use 'quorum approve <ID>', 'quorum reject <ID>', or 'quorum correct <ID> \"Title\"' to review.[/]")
+
+
+@app.command()
+def approve(
+    media_id: int = typer.Argument(..., help="Media ID to approve."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Approve a proposed identification."""
+    from datetime import datetime
+
+    from .db import QuorumDB
+    s = _settings(config)
+    with QuorumDB(s.db_path) as db:
+        item = db.get_review_item(media_id)
+        if not item:
+            console.print(f"[red]Media {media_id} not found.[/]")
+            raise typer.Exit(1)
+        if not item["signals"]:
+            console.print(f"[yellow]No signals for media {media_id}.[/]")
+            raise typer.Exit(1)
+        candidate = item["top_candidate"] or "unknown"
+        db.insert_feedback(
+            media_id, "approve", candidate,
+            created_at=datetime.now().isoformat(timespec="seconds"),
+        )
+    console.print(f"[green]Approved:[/] {candidate} for {Path(item['path']).name}")
+
+
+@app.command()
+def reject(
+    media_id: int = typer.Argument(..., help="Media ID to reject."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Reject a proposed identification (keep original)."""
+    from datetime import datetime
+
+    from .db import QuorumDB
+    s = _settings(config)
+    with QuorumDB(s.db_path) as db:
+        item = db.get_review_item(media_id)
+        if not item:
+            console.print(f"[red]Media {media_id} not found.[/]")
+            raise typer.Exit(1)
+        candidate = item["top_candidate"] or "unknown"
+        db.insert_feedback(
+            media_id, "reject", candidate,
+            created_at=datetime.now().isoformat(timespec="seconds"),
+        )
+    console.print(f"[yellow]Rejected:[/] {candidate} for {Path(item['path']).name}")
+
+
+@app.command()
+def correct(
+    media_id: int = typer.Argument(..., help="Media ID to correct."),
+    title: str = typer.Argument(..., help="Correct title (e.g. 'The Matrix (1999)')."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Manually correct an identification."""
+    from datetime import datetime
+
+    from .db import QuorumDB
+    s = _settings(config)
+    with QuorumDB(s.db_path) as db:
+        item = db.get_review_item(media_id)
+        if not item:
+            console.print(f"[red]Media {media_id} not found.[/]")
+            raise typer.Exit(1)
+        original = item["top_candidate"] or "unknown"
+        db.insert_feedback(
+            media_id, "correct", original,
+            correction=title,
+            created_at=datetime.now().isoformat(timespec="seconds"),
+        )
+    console.print(f"[green]Corrected:[/] {Path(item['path']).name} → {title}")
+
+
 if __name__ == "__main__":
     app()

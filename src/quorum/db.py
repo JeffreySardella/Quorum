@@ -725,7 +725,7 @@ class QuorumDB:
         order = "ASC" if sort == "confidence" else "DESC"
         sort_col = "max_conf" if sort == "confidence" else "s.created_at"
 
-        sql = f"""
+        sql = """
             SELECT m.id, m.path, m.type, m.size, m.created_at,
                    MAX(s.confidence) as max_conf,
                    GROUP_CONCAT(s.candidate, ' | ') as candidates
