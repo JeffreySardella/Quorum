@@ -456,3 +456,20 @@ class TestPluginsCommands:
         config_path.write_text('db_path = "quorum.db"', encoding="utf-8")
         result = runner.invoke(app, ["plugins", "info", "nonexistent", "--config", str(config_path)])
         assert result.exit_code == 1
+
+
+class TestMusicCommands:
+    def test_music_scan_empty(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "config.toml"
+        config_path.write_text('db_path = "quorum.db"', encoding="utf-8")
+        result = runner.invoke(app, ["music", "scan", str(tmp_path), "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "No music" in result.output
+
+    def test_music_scan_with_files(self, tmp_path: Path) -> None:
+        (tmp_path / "Artist - Song.mp3").write_bytes(b"\x00" * 100)
+        config_path = tmp_path / "config.toml"
+        config_path.write_text('db_path = "quorum.db"', encoding="utf-8")
+        result = runner.invoke(app, ["music", "scan", str(tmp_path), "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "Music Scan" in result.output

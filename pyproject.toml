@@ -43,6 +43,8 @@ dependencies = [
     "sqlite-vec>=0.1",
     # Perceptual hashing for image deduplication
     "imagehash>=4.3",
+    # Music tag reading for music organization plugin
+    "mutagen>=1.47",
 ]
 
 [project.optional-dependencies]

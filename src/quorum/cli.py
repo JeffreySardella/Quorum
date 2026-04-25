@@ -1107,5 +1107,56 @@ def plugins_info(
     console.print(f"File types: {', '.join(plugin.file_types)}")
 
 
+music_app = typer.Typer(help="Organize music files.", no_args_is_help=True)
+app.add_typer(music_app, name="music")
+
+
+@music_app.command("scan")
+def music_scan(
+    src: Path = typer.Argument(..., help="Source directory with music files."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Scan music files and show organization proposals."""
+    from .plugins.music import MusicPlugin
+    plugin = MusicPlugin()
+    plugin.on_register({})
+    files = [f for f in src.rglob("*") if f.suffix.lower() in plugin.file_types]
+    if not files:
+        console.print(f"[yellow]No music files found in {src}[/]")
+        return
+    proposals = plugin.on_scan(files)
+    t = Table(title=f"Music Scan ({len(proposals)} files)")
+    t.add_column("source")
+    t.add_column("→")
+    t.add_column("destination")
+    t.add_column("confidence", justify="right")
+    for p in proposals:
+        t.add_row(Path(p.source_path).name, "→", p.dest_path, f"{p.confidence:.1f}")
+    console.print(t)
+
+
+@music_app.command("apply")
+def music_apply(
+    src: Path = typer.Argument(..., help="Source directory with music files."),
+    dest: Path = typer.Argument(..., help="Destination root for organized music."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Organize music files into Plex-friendly structure."""
+    from .plugins.music import MusicPlugin
+    plugin = MusicPlugin()
+    plugin.on_register({"dest_root": dest})
+    files = [f for f in src.rglob("*") if f.suffix.lower() in plugin.file_types]
+    if not files:
+        console.print(f"[yellow]No music files found in {src}[/]")
+        return
+    proposals = plugin.on_scan(files)
+    results = plugin.on_apply(proposals)
+    moved = sum(1 for r in results if r["status"] == "moved")
+    failed = sum(1 for r in results if r["status"] == "failed")
+    console.print("[green]Music organization complete:[/]")
+    console.print(f"  Moved: {moved}")
+    console.print(f"  Failed: {failed}")
+
+
 if __name__ == "__main__":
     app()
