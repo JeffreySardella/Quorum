@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any
 
 from .db import QuorumDB
 
@@ -188,3 +190,89 @@ def _generate_event_name(
         top_face = max(face_tags, key=face_tags.get)
         return f"{date_str} — with {top_face}"
     return date_str
+
+
+def enrich_event(db: QuorumDB, event_id: int) -> dict[str, Any]:
+    """Re-analyze an event with all available metadata across media types."""
+    event = db.get_event(event_id)
+    if not event:
+        return {"error": "Event not found"}
+
+    media = db.get_event_media(event_id)
+    if not media:
+        return {"error": "No media in event"}
+
+    # Collect cross-media metadata
+    people: dict[str, int] = {}
+    scenes: dict[str, int] = {}
+    types: dict[str, int] = {}
+    titles: list[str] = []
+
+    for m in media:
+        types[m["type"]] = types.get(m["type"], 0) + 1
+        for tag in db.get_tags(m["id"], category="face"):
+            people[tag["value"]] = people.get(tag["value"], 0) + 1
+        for tag in db.get_tags(m["id"], category="scene"):
+            scenes[tag["value"]] = scenes.get(tag["value"], 0) + 1
+        title = db.get_metadata_value(m["id"], "title")
+        if title:
+            titles.append(title)
+
+    enrichment = {
+        "event_id": event_id,
+        "event_name": event["name"],
+        "media_count": len(media),
+        "media_types": types,
+        "people": sorted(people.items(), key=lambda x: -x[1]),
+        "scenes": sorted(scenes.items(), key=lambda x: -x[1]),
+        "titles": titles[:10],
+        "date_range": {
+            "start": event.get("start_time"),
+            "end": event.get("end_time"),
+        },
+    }
+
+    # Update event metadata with enrichment
+    import json
+    db.update_event(event_id, metadata=json.dumps(enrichment))
+
+    return enrichment
+
+
+def export_event(db: QuorumDB, event_id: int, output_dir: Path) -> dict[str, int]:
+    """Export all media and metadata for an event to a directory."""
+    import json
+    import shutil
+
+    event = db.get_event(event_id)
+    if not event:
+        return {"error": "Event not found", "files": 0}
+
+    media = db.get_event_media(event_id)
+    event_dir = output_dir / _safe_dirname(event["name"])
+    event_dir.mkdir(parents=True, exist_ok=True)
+
+    copied = 0
+    for m in media:
+        src = Path(m["path"])
+        if src.exists():
+            dst = event_dir / src.name
+            if not dst.exists():
+                shutil.copy2(str(src), str(dst))
+                copied += 1
+
+    # Write metadata
+    meta = {
+        "event": dict(event),
+        "media": [{"path": m["path"], "type": m["type"]} for m in media],
+    }
+    (event_dir / "event-metadata.json").write_text(
+        json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+    return {"files": copied, "output": str(event_dir)}
+
+
+def _safe_dirname(name: str) -> str:
+    bad = set('<>:"/\\|?*')
+    return "".join(ch for ch in name if ch not in bad).strip().strip(".")[:100] or "unnamed-event"

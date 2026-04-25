@@ -242,6 +242,46 @@ def events_rename(
     console.print(f"[green]Renamed event {event_id} to '{name}'[/]")
 
 
+@events_app.command("enrich")
+def events_enrich(
+    event_id: int = typer.Argument(..., help="Event ID to enrich."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Re-analyze an event with cross-media metadata."""
+    from .db import QuorumDB
+    from .events import enrich_event
+    s = _settings(config)
+    with QuorumDB(s.db_path) as db:
+        result = enrich_event(db, event_id)
+    if "error" in result:
+        console.print(f"[red]{result['error']}[/]")
+        raise typer.Exit(1)
+    console.print(f"[bold]{result['event_name']}[/] — {result['media_count']} files")
+    if result["people"]:
+        console.print(f"People: {', '.join(p[0] for p in result['people'][:5])}")
+    if result["scenes"]:
+        console.print(f"Scenes: {', '.join(s[0] for s in result['scenes'][:5])}")
+    console.print(f"Types: {result['media_types']}")
+
+
+@events_app.command("export")
+def events_export_cmd(
+    event_id: int = typer.Argument(..., help="Event ID to export."),
+    output: Path = typer.Argument(..., help="Output directory."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Export an event's media and metadata to a directory."""
+    from .db import QuorumDB
+    from .events import export_event
+    s = _settings(config)
+    with QuorumDB(s.db_path) as db:
+        result = export_event(db, event_id, output)
+    if "error" in result:
+        console.print(f"[red]{result['error']}[/]")
+        raise typer.Exit(1)
+    console.print(f"[green]Exported {result['files']} files to {result.get('output')}[/]")
+
+
 # Global state set by the --cpu-only callback
 _cpu_only_override: bool = False
 
@@ -1251,6 +1291,69 @@ def docs_apply(
     results = plugin.on_apply(proposals)
     moved = sum(1 for r in results if r["status"] == "moved")
     console.print(f"[green]Document organization complete:[/] {moved} documents organized")
+
+
+backup_app = typer.Typer(help="Backup manifest management.", no_args_is_help=True)
+app.add_typer(backup_app, name="backup")
+
+
+@backup_app.command("manifest")
+def backup_manifest(
+    output: Path = typer.Option(Path("quorum-manifest.db"), "--output", "-o", help="Output manifest path."),
+    since: str = typer.Option(None, "--since", help="Only include files created after (YYYY-MM)."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Generate a backup manifest of all organized media."""
+    from .db import QuorumDB
+    from .backup import create_manifest
+    s = _settings(config)
+    with QuorumDB(s.db_path) as db:
+        result = create_manifest(db, output, since=since)
+    console.print(f"[green]Manifest created:[/] {result['files']} files → {result['output']}")
+
+
+@backup_app.command("verify")
+def backup_verify(
+    manifest: Path = typer.Argument(..., help="Path to manifest file."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Verify backup integrity against a manifest."""
+    from .backup import verify_manifest
+    if not manifest.exists():
+        console.print(f"[red]Manifest not found: {manifest}[/]")
+        raise typer.Exit(1)
+    result = verify_manifest(manifest)
+    t = Table(title="Backup Verification")
+    t.add_column("status")
+    t.add_column("count", justify="right")
+    t.add_row("[green]Verified[/]", str(result["verified"]))
+    t.add_row("[red]Missing[/]", str(result["missing"]))
+    t.add_row("[yellow]Corrupted[/]", str(result["corrupted"]))
+    t.add_row("[bold]Total[/]", str(result["total"]))
+    console.print(t)
+
+
+@backup_app.command("diff")
+def backup_diff(
+    m1: Path = typer.Argument(..., help="First manifest."),
+    m2: Path = typer.Argument(..., help="Second manifest."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Compare two manifests."""
+    from .backup import diff_manifests
+    if not m1.exists() or not m2.exists():
+        console.print("[red]One or both manifests not found.[/]")
+        raise typer.Exit(1)
+    result = diff_manifests(m1, m2)
+    console.print(f"Added: {len(result['added'])}")
+    console.print(f"Removed: {len(result['removed'])}")
+    console.print(f"Unchanged: {len(result['unchanged'])}")
+    if result["added"]:
+        for p in result["added"][:10]:
+            console.print(f"  [green]+ {Path(p).name}[/]")
+    if result["removed"]:
+        for p in result["removed"][:10]:
+            console.print(f"  [red]- {Path(p).name}[/]")
 
 
 if __name__ == "__main__":
