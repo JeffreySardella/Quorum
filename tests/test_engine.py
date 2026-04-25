@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from quorum.engine.plugin import PluginRegistry, Proposal, QuorumPlugin
+from quorum.engine.plugin import PluginRegistry, Proposal
 from quorum.engine.runner import PluginRunner
 from quorum.db import QuorumDB
 

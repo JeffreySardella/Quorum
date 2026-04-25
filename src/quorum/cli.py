@@ -1067,5 +1067,45 @@ def signals_reset(
     console.print("[green]Signal weights reset to defaults (1.0 for all signals).[/]")
 
 
+plugins_app = typer.Typer(help="Manage Quorum plugins.", no_args_is_help=True)
+app.add_typer(plugins_app, name="plugins")
+
+
+@plugins_app.command("list")
+def plugins_list(
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """List all registered plugins."""
+    from .engine import PluginRegistry
+    registry = PluginRegistry.discover()
+    plugins = registry.list_plugins()
+    if not plugins:
+        console.print("[yellow]No plugins found.[/]")
+        console.print("Install plugins via pip or register built-in plugins.")
+        return
+    t = Table(title="Registered Plugins")
+    t.add_column("name")
+    t.add_column("file types")
+    for p in plugins:
+        t.add_row(p["name"], ", ".join(p["file_types"]))
+    console.print(t)
+
+
+@plugins_app.command("info")
+def plugins_info(
+    name: str = typer.Argument(..., help="Plugin name."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Show details about a plugin."""
+    from .engine import PluginRegistry
+    registry = PluginRegistry.discover()
+    plugin = registry.get(name)
+    if not plugin:
+        console.print(f"[red]Plugin '{name}' not found.[/]")
+        raise typer.Exit(1)
+    console.print(f"[bold]{plugin.name}[/]")
+    console.print(f"File types: {', '.join(plugin.file_types)}")
+
+
 if __name__ == "__main__":
     app()
