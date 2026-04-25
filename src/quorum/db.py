@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 _SCHEMA = """
@@ -538,3 +539,81 @@ class QuorumDB:
             "total_tags": total_tags,
             "pending_jobs": pending_jobs,
         }
+
+    def export_all(self) -> dict:
+        media = self.list_media()
+        for m in media:
+            m["metadata"] = self.get_metadata(m["id"])
+            m["tags"] = self.get_tags(m["id"])
+            m["signals"] = self.get_signals(m["id"])
+        events = self.list_events()
+        return {"media": media, "events": events, "stats": self.stats()}
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers
+# ---------------------------------------------------------------------------
+
+_VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v", ".ts", ".mpg", ".mpeg"}
+_PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".tiff", ".tif", ".bmp", ".webp"}
+
+
+def migrate_from_legacy(db: QuorumDB, root: Path) -> dict[str, int]:
+    counts = {"nfo_imported": 0, "faces_imported": 0, "media_indexed": 0}
+
+    for ext in _VIDEO_EXTS | _PHOTO_EXTS:
+        for f in root.rglob(f"*{ext}"):
+            if ".quorum-cache" in f.parts:
+                continue
+            media_type = "video" if ext in _VIDEO_EXTS else "photo"
+            mid = db.upsert_media(path=str(f), media_type=media_type, size=f.stat().st_size)
+            counts["media_indexed"] += 1
+
+            nfo = f.with_suffix(".nfo")
+            if nfo.exists():
+                try:
+                    tree = ET.parse(str(nfo))
+                    r = tree.getroot()
+                    title_el = r.find("title")
+                    if title_el is not None and title_el.text:
+                        db.set_metadata(mid, "title", title_el.text)
+                    plot_el = r.find("plot")
+                    if plot_el is not None and plot_el.text:
+                        db.set_metadata(mid, "description", plot_el.text)
+                    year_el = r.find("year")
+                    if year_el is not None and year_el.text:
+                        db.set_metadata(mid, "year", year_el.text)
+                    for genre_el in r.findall("genre"):
+                        if genre_el.text:
+                            db.insert_tag(mid, "scene", genre_el.text)
+                    for actor_el in r.findall(".//actor/name"):
+                        if actor_el.text:
+                            db.insert_tag(mid, "face", actor_el.text)
+                    counts["nfo_imported"] += 1
+                except ET.ParseError:
+                    pass
+
+    faces_db = root / "faces.db"
+    if faces_db.exists():
+        import sqlite3 as _sql
+        fconn = _sql.connect(str(faces_db))
+        try:
+            rows = fconn.execute("SELECT photo_path, embedding, cluster_id, label FROM faces").fetchall()
+            for photo_path, embedding, cluster_id, label in rows:
+                existing = db.get_media_by_path(photo_path)
+                if not existing:
+                    p = Path(photo_path)
+                    if p.exists():
+                        mid = db.upsert_media(path=photo_path, media_type="photo", size=p.stat().st_size)
+                    else:
+                        continue
+                else:
+                    mid = existing["id"]
+                db.insert_embedding(mid, "face", embedding, label=label)
+                if label:
+                    db.insert_tag(mid, "face", label)
+                counts["faces_imported"] += 1
+        finally:
+            fconn.close()
+
+    return counts
