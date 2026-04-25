@@ -94,6 +94,26 @@ def db_export(
     output.write_text(_json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     console.print(f"[green]Exported to {output}[/]")
 
+@db_app.command("index")
+def db_index(
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Build or rebuild the search index for all media."""
+    from .db import QuorumDB
+    from .search import SearchEngine
+
+    s = _settings(config)
+    with QuorumDB(s.db_path) as db:
+        engine = SearchEngine(s, db)
+        try:
+            counts = engine.index_all()
+        finally:
+            engine.close()
+    console.print("[green]Indexing complete:[/]")
+    console.print(f"  Text (FTS5): {counts['text_indexed']} media files indexed")
+    console.print(f"  Vector: {counts['vector_indexed']} embeddings generated")
+
+
 # Global state set by the --cpu-only callback
 _cpu_only_override: bool = False
 
@@ -552,6 +572,47 @@ def gui():
     """Launch the Quorum desktop GUI (customtkinter wrapper over all commands)."""
     from .gui import main as gui_main
     gui_main()
+
+
+@app.command()
+def search(
+    query: str = typer.Argument(..., help="Natural language search query."),
+    type: str = typer.Option(None, "--type", "-t", help="Filter by media type (video, photo)."),
+    after: str = typer.Option(None, "--after", help="Only results after this date (YYYY-MM-DD)."),
+    before: str = typer.Option(None, "--before", help="Only results before this date (YYYY-MM-DD)."),
+    limit: int = typer.Option(20, "--limit", "-n", help="Max results."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Search your media library with natural language."""
+    from .db import QuorumDB
+    from .search import SearchEngine
+
+    s = _settings(config)
+    with QuorumDB(s.db_path) as db:
+        engine = SearchEngine(s, db)
+        try:
+            results = engine.search(query, media_type=type, after=after, before=before, limit=limit)
+        finally:
+            engine.close()
+
+    if not results:
+        console.print(f"[yellow]No results for:[/] {query}")
+        return
+
+    t = Table(title=f"Search: {query}")
+    t.add_column("#", justify="right")
+    t.add_column("type")
+    t.add_column("score", justify="right")
+    t.add_column("file")
+    t.add_column("snippet")
+    for i, r in enumerate(results, 1):
+        score = f"{r['score']:.2f}"
+        name = Path(r["path"]).name
+        snippet = r.get("snippet", "")[:60]
+        t.add_row(str(i), r["type"], score, name, snippet)
+    console.print(t)
+    method = results[0].get("search_method", "unknown") if results else "none"
+    console.print(f"[dim]Search method: {method} | {len(results)} results[/]")
 
 
 @app.command()
