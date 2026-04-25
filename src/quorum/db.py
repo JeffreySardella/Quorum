@@ -110,6 +110,12 @@ class QuorumDB:
         self.conn.executescript(_SCHEMA)
         self.conn.commit()
 
+    def __enter__(self) -> QuorumDB:
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.close()
+
     def close(self) -> None:
         self.conn.close()
 

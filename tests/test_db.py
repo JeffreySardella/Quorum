@@ -595,3 +595,23 @@ class TestStats:
             assert stats["pending_jobs"] == 1
         finally:
             db.close()
+
+
+class TestContextManager:
+    def test_context_manager_closes(self, tmp_db_path: Path) -> None:
+        with QuorumDB(tmp_db_path) as db:
+            db.insert_media(path="/a.mkv", media_type="video", size=100)
+        import sqlite3 as _sql
+        with pytest.raises(_sql.ProgrammingError):
+            db.conn.execute("SELECT 1")
+
+    def test_context_manager_on_error(self, tmp_db_path: Path) -> None:
+        try:
+            with QuorumDB(tmp_db_path) as db:
+                db.insert_media(path="/a.mkv", media_type="video", size=100)
+                raise ValueError("test error")
+        except ValueError:
+            pass
+        import sqlite3 as _sql
+        with pytest.raises(_sql.ProgrammingError):
+            db.conn.execute("SELECT 1")

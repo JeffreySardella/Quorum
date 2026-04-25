@@ -100,6 +100,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     cpu_only: bool = False
+    db_path: Path = Path("quorum.db")
 
     tmdb_api_key: str = ""
     ollama_url: str = "http://127.0.0.1:11434"
