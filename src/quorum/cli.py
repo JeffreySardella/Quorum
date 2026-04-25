@@ -1158,5 +1158,100 @@ def music_apply(
     console.print(f"  Failed: {failed}")
 
 
+audio_app = typer.Typer(help="Organize audio memos.", no_args_is_help=True)
+app.add_typer(audio_app, name="audio")
+
+
+@audio_app.command("scan")
+def audio_scan(
+    src: Path = typer.Argument(..., help="Source directory with audio files."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Scan audio memos and show organization proposals."""
+    from .plugins.audio import AudioMemoPlugin
+    plugin = AudioMemoPlugin()
+    plugin.on_register({})
+    files = [f for f in src.rglob("*") if f.suffix.lower() in plugin.file_types]
+    if not files:
+        console.print(f"[yellow]No audio memo files found in {src}[/]")
+        return
+    proposals = plugin.on_scan(files)
+    t = Table(title=f"Audio Scan ({len(proposals)} memos)")
+    t.add_column("source")
+    t.add_column("→")
+    t.add_column("destination")
+    for p in proposals:
+        t.add_row(Path(p.source_path).name, "→", p.dest_path)
+    console.print(t)
+
+
+@audio_app.command("apply")
+def audio_apply(
+    src: Path = typer.Argument(..., help="Source directory."),
+    dest: Path = typer.Argument(..., help="Destination root."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Organize audio memos by date and topic."""
+    from .plugins.audio import AudioMemoPlugin
+    plugin = AudioMemoPlugin()
+    plugin.on_register({"dest_root": dest})
+    files = [f for f in src.rglob("*") if f.suffix.lower() in plugin.file_types]
+    if not files:
+        console.print(f"[yellow]No audio memo files found in {src}[/]")
+        return
+    proposals = plugin.on_scan(files)
+    results = plugin.on_apply(proposals)
+    moved = sum(1 for r in results if r["status"] == "moved")
+    console.print(f"[green]Audio organization complete:[/] {moved} memos organized")
+
+
+docs_app = typer.Typer(help="Organize documents.", no_args_is_help=True)
+app.add_typer(docs_app, name="docs")
+
+
+@docs_app.command("scan")
+def docs_scan(
+    src: Path = typer.Argument(..., help="Source directory with documents."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Scan documents and show organization proposals."""
+    from .plugins.docs import DocumentPlugin
+    plugin = DocumentPlugin()
+    plugin.on_register({})
+    files = [f for f in src.rglob("*") if f.suffix.lower() in plugin.file_types]
+    if not files:
+        console.print(f"[yellow]No document files found in {src}[/]")
+        return
+    proposals = plugin.on_scan(files)
+    t = Table(title=f"Document Scan ({len(proposals)} files)")
+    t.add_column("source")
+    t.add_column("category")
+    t.add_column("→ destination")
+    for p in proposals:
+        cat = p.metadata.get("category", "?")
+        t.add_row(Path(p.source_path).name, cat, p.dest_path)
+    console.print(t)
+
+
+@docs_app.command("apply")
+def docs_apply(
+    src: Path = typer.Argument(..., help="Source directory."),
+    dest: Path = typer.Argument(..., help="Destination root."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Organize documents by category and date."""
+    from .plugins.docs import DocumentPlugin
+    plugin = DocumentPlugin()
+    plugin.on_register({"dest_root": dest})
+    files = [f for f in src.rglob("*") if f.suffix.lower() in plugin.file_types]
+    if not files:
+        console.print(f"[yellow]No document files found in {src}[/]")
+        return
+    proposals = plugin.on_scan(files)
+    results = plugin.on_apply(proposals)
+    moved = sum(1 for r in results if r["status"] == "moved")
+    console.print(f"[green]Document organization complete:[/] {moved} documents organized")
+
+
 if __name__ == "__main__":
     app()
