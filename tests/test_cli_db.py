@@ -536,3 +536,24 @@ class TestBackupCommands:
         result = runner.invoke(app, ["backup", "verify", str(manifest), "--config", str(config_path)])
         assert result.exit_code == 0
         assert "Missing" in result.output
+
+
+class TestOrganizeCommand:
+    def test_organize_dry_run(self, tmp_path: Path) -> None:
+        src = tmp_path / "messy"
+        src.mkdir()
+        (src / "photo.jpg").write_bytes(b"\x00")
+        (src / "doc.txt").write_text("content")
+        db_path = tmp_path / "quorum.db"
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'db_path = "{db_path.as_posix()}"', encoding="utf-8")
+        result = runner.invoke(app, ["organize", str(src), "--dry-run", "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "Files scanned: 2" in result.output
+
+    def test_organize_nonexistent(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "quorum.db"
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'db_path = "{db_path.as_posix()}"', encoding="utf-8")
+        result = runner.invoke(app, ["organize", str(tmp_path / "nope"), "--config", str(config_path)])
+        assert result.exit_code == 1
