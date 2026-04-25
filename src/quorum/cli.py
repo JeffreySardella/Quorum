@@ -964,5 +964,108 @@ def correct(
     console.print(f"[green]Corrected:[/] {Path(item['path']).name} → {title}")
 
 
+notify_app = typer.Typer(help="Manage processing notifications.", no_args_is_help=True)
+app.add_typer(notify_app, name="notify")
+
+
+@notify_app.command("test")
+def notify_test(
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Send a test notification to all enabled channels."""
+    from .notify import setup_notifications
+    s = _settings(config)
+    bus = setup_notifications(s)
+    bus.emit("test", "This is a test notification from Quorum.", {"source": "notify test"})
+    console.print("[green]Test notification sent to all enabled channels.[/]")
+    notify_cfg = getattr(s, "notify", None)
+    if notify_cfg:
+        console.print(f"  Desktop: {'enabled' if notify_cfg.desktop else 'disabled'}")
+        console.print(f"  Webhook: {notify_cfg.webhook or 'disabled'}")
+    else:
+        console.print("  [yellow]No notification channels configured.[/]")
+
+
+@notify_app.command("history")
+def notify_history(
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Show recent notification history (current session only)."""
+    console.print("[yellow]Notification history is only available during a running session.[/]")
+    console.print("Start the web UI with 'quorum serve' to see live notifications.")
+
+
+signals_app = typer.Typer(help="Manage signal weights and accuracy.", no_args_is_help=True)
+app.add_typer(signals_app, name="signals")
+
+
+@signals_app.command("weights")
+def signals_weights(
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Show current signal weights."""
+    import json
+    weights_path = Path("signal_weights.json")
+    if weights_path.exists():
+        weights = json.loads(weights_path.read_text(encoding="utf-8"))
+    else:
+        weights = {}
+
+    t = Table(title="Signal Weights")
+    t.add_column("signal")
+    t.add_column("weight", justify="right")
+    t.add_column("status")
+    default_signals = ["filename", "vision", "transcript", "ocr", "fingerprint"]
+    shown = set()
+    for name in default_signals:
+        w = weights.get(name, 1.0)
+        status = "adjusted" if name in weights else "default"
+        t.add_row(name, f"{w:.2f}", status)
+        shown.add(name)
+    for name, w in weights.items():
+        if name not in shown:
+            t.add_row(name, f"{w:.2f}", "adjusted")
+    console.print(t)
+
+
+@signals_app.command("retune")
+def signals_retune(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show changes without applying."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Recalculate signal weights from review feedback."""
+    from .db import QuorumDB
+    from .feedback_loop import retune_signals
+    s = _settings(config)
+    with QuorumDB(s.db_path) as db:
+        changes = retune_signals(db, dry_run=dry_run)
+    if not changes:
+        console.print("[yellow]No feedback data available for retuning.[/]")
+        return
+    t = Table(title="Signal Weight Changes" + (" (DRY RUN)" if dry_run else ""))
+    t.add_column("signal")
+    t.add_column("old", justify="right")
+    t.add_column("new", justify="right")
+    t.add_column("delta", justify="right")
+    for name, info in changes.items():
+        delta = info["delta"]
+        color = "green" if delta > 0 else "red" if delta < 0 else "dim"
+        t.add_row(name, f"{info['old']:.2f}", f"{info['new']:.2f}", f"[{color}]{delta:+.2f}[/{color}]")
+    console.print(t)
+    if not dry_run:
+        console.print("[green]Weights saved to signal_weights.json[/]")
+
+
+@signals_app.command("reset")
+def signals_reset(
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Reset signal weights to defaults."""
+    weights_path = Path("signal_weights.json")
+    if weights_path.exists():
+        weights_path.unlink()
+    console.print("[green]Signal weights reset to defaults (1.0 for all signals).[/]")
+
+
 if __name__ == "__main__":
     app()
