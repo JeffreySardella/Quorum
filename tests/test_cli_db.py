@@ -201,3 +201,52 @@ class TestDBIndex:
         result = runner.invoke(app, ["db", "index", "--config", str(config_path)])
         assert result.exit_code == 0
         assert "Indexing complete" in result.output
+
+
+class TestEventsCommands:
+    def test_events_detect(self, tmp_path: Path) -> None:
+        from quorum.db import QuorumDB
+        db_path = tmp_path / "quorum.db"
+        with QuorumDB(db_path) as db:
+            db.insert_media(path="/a.jpg", media_type="photo", size=100, created_at="2024-06-15T10:00:00")
+            db.insert_media(path="/b.jpg", media_type="photo", size=100, created_at="2024-06-15T10:30:00")
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'db_path = "{db_path.as_posix()}"', encoding="utf-8")
+        result = runner.invoke(app, ["events", "detect", "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "Events created: 1" in result.output
+
+    def test_events_list(self, tmp_path: Path) -> None:
+        from quorum.db import QuorumDB
+        db_path = tmp_path / "quorum.db"
+        with QuorumDB(db_path) as db:
+            db.insert_event(name="Beach Day", start_time="2024-06-15T10:00:00")
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'db_path = "{db_path.as_posix()}"', encoding="utf-8")
+        result = runner.invoke(app, ["events", "list", "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "Beach Day" in result.output
+
+    def test_events_show(self, tmp_path: Path) -> None:
+        from quorum.db import QuorumDB
+        db_path = tmp_path / "quorum.db"
+        with QuorumDB(db_path) as db:
+            eid = db.insert_event(name="Beach Day", start_time="2024-06-15T10:00:00")
+            mid = db.insert_media(path="/beach.jpg", media_type="photo", size=100)
+            db.assign_media_to_event(mid, eid)
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'db_path = "{db_path.as_posix()}"', encoding="utf-8")
+        result = runner.invoke(app, ["events", "show", "1", "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "Beach Day" in result.output
+
+    def test_events_rename(self, tmp_path: Path) -> None:
+        from quorum.db import QuorumDB
+        db_path = tmp_path / "quorum.db"
+        with QuorumDB(db_path) as db:
+            db.insert_event(name="Old Name", start_time="2024-06-15T10:00:00")
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'db_path = "{db_path.as_posix()}"', encoding="utf-8")
+        result = runner.invoke(app, ["events", "rename", "1", "New Name", "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "Renamed" in result.output
