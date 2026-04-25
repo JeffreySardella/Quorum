@@ -1,18 +1,55 @@
 {% extends "base.html" %}
-{% block title %}Dedup Report - Quorum{% endblock %}
+{% block title %}Dedup - Quorum{% endblock %}
 {% block content %}
-<h1>Dedup Report</h1>
-<p>Find duplicate media files using audio fingerprinting and perceptual hashing.</p>
+<h1>Duplicate Detection</h1>
 
-<div id="dedup-results">
-    <p>Deduplication results will appear here after running a scan with the fingerprint signal enabled.</p>
-    <p>Enable in config: <code>[signals] fingerprint = true</code></p>
+{% if report %}
+<div class="stat-grid">
+    <article class="stat-card">
+        <p>Files Scanned</p>
+        <h3>{{ report.total_files_scanned }}</h3>
+    </article>
+    <article class="stat-card">
+        <p>Duplicate Clusters</p>
+        <h3>{{ report.clusters | length }}</h3>
+    </article>
+    <article class="stat-card">
+        <p>Total Duplicates</p>
+        <h3>{{ report.total_duplicates }}</h3>
+    </article>
+    <article class="stat-card">
+        <p>Scanned At</p>
+        <h3>{{ report.scanned_at[:10] if report.scanned_at else '-' }}</h3>
+    </article>
 </div>
 
-<h2>How It Works</h2>
-<ul>
-    <li><strong>Videos:</strong> Chromaprint audio fingerprinting compares audio tracks.</li>
-    <li><strong>Photos:</strong> Perceptual hashing detects visually similar images.</li>
-    <li>Results are compared pair-wise and shown side by side for manual review.</li>
-</ul>
+{% if report.clusters %}
+{% for cluster in report.clusters %}
+<article>
+    <header>
+        <strong>Cluster {{ cluster.id }}</strong> &mdash; {{ cluster.strategy | replace("_", " ") | title }}
+        <span style="float: right;">{{ cluster.files | length }} files</span>
+    </header>
+    <table>
+        <thead><tr><th>Keep</th><th>File</th><th>Size</th><th>Type</th></tr></thead>
+        <tbody>
+            {% for f in cluster.files %}
+            <tr>
+                <td>{% if f.media_id == cluster.recommended_keep %}✓{% endif %}</td>
+                <td>{{ f.path.split('/')[-1] if '/' in f.path else f.path.split('\\')[-1] }}</td>
+                <td>{{ f.size }}</td>
+                <td>{{ f.media_type }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</article>
+{% endfor %}
+{% else %}
+<p>No duplicates found.</p>
+{% endif %}
+
+{% else %}
+<p>No dedup report found. Run <code>quorum dedup scan</code> to scan for duplicates.</p>
+{% endif %}
 {% endblock %}
