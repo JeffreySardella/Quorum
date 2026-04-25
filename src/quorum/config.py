@@ -100,6 +100,12 @@ class Events(BaseModel):
     gap_hours: float = 2.0
 
 
+class Notify(BaseModel):
+    desktop: bool = False
+    webhook: str = ""
+    webhook_events: list[str] = Field(default_factory=list)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -119,6 +125,7 @@ class Settings(BaseSettings):
     web: Web = Field(default_factory=Web)
     faces: Faces = Field(default_factory=Faces)
     events: Events = Field(default_factory=Events)
+    notify: Notify = Field(default_factory=Notify)
 
 
 def load_settings(config_path: Path | None = None) -> Settings:
