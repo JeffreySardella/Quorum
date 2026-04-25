@@ -96,6 +96,10 @@ class Faces(BaseModel):
     min_cluster_size: int = 2
 
 
+class Events(BaseModel):
+    gap_hours: float = 2.0
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -114,6 +118,7 @@ class Settings(BaseSettings):
     watch: Watch = Field(default_factory=Watch)
     web: Web = Field(default_factory=Web)
     faces: Faces = Field(default_factory=Faces)
+    events: Events = Field(default_factory=Events)
 
 
 def load_settings(config_path: Path | None = None) -> Settings:
