@@ -250,3 +250,49 @@ class TestEventsCommands:
         result = runner.invoke(app, ["events", "rename", "1", "New Name", "--config", str(config_path)])
         assert result.exit_code == 0
         assert "Renamed" in result.output
+
+
+class TestDedupCommands:
+    def test_dedup_scan_no_duplicates(self, tmp_path: Path) -> None:
+        from quorum.db import QuorumDB
+        db_path = tmp_path / "quorum.db"
+        f1 = tmp_path / "a.mkv"
+        f2 = tmp_path / "b.mkv"
+        f1.write_bytes(b"content A")
+        f2.write_bytes(b"content B")
+        with QuorumDB(db_path) as db:
+            db.insert_media(path=str(f1), media_type="video", size=100)
+            db.insert_media(path=str(f2), media_type="video", size=100)
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'db_path = "{db_path.as_posix()}"', encoding="utf-8")
+        import os
+        old_cwd = os.getcwd()
+        os.chdir(str(tmp_path))
+        try:
+            result = runner.invoke(app, ["dedup", "scan", "--config", str(config_path)])
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0
+        assert "Duplicate clusters: 0" in result.output
+
+    def test_dedup_scan_with_duplicates(self, tmp_path: Path) -> None:
+        from quorum.db import QuorumDB
+        db_path = tmp_path / "quorum.db"
+        f1 = tmp_path / "a.mkv"
+        f2 = tmp_path / "b.mkv"
+        f1.write_bytes(b"identical")
+        f2.write_bytes(b"identical")
+        with QuorumDB(db_path) as db:
+            db.insert_media(path=str(f1), media_type="video", size=9)
+            db.insert_media(path=str(f2), media_type="video", size=9)
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'db_path = "{db_path.as_posix()}"', encoding="utf-8")
+        import os
+        old_cwd = os.getcwd()
+        os.chdir(str(tmp_path))
+        try:
+            result = runner.invoke(app, ["dedup", "scan", "--config", str(config_path)])
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0
+        assert "Duplicate clusters: 1" in result.output

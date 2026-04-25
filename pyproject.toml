@@ -41,6 +41,8 @@ dependencies = [
     "python-multipart>=0.0.9",
     # Vector embeddings extension for SQLite
     "sqlite-vec>=0.1",
+    # Perceptual hashing for image deduplication
+    "imagehash>=4.3",
 ]
 
 [project.optional-dependencies]

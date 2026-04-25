@@ -757,5 +757,92 @@ def undo(
     )
 
 
+dedup_app = typer.Typer(help="Detect and manage duplicate files.", no_args_is_help=True)
+app.add_typer(dedup_app, name="dedup")
+
+
+@dedup_app.command("scan")
+def dedup_scan(
+    aggressive: bool = typer.Option(False, "--aggressive", help="Include near-matches and cross-media."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Scan for duplicate files."""
+    from .db import QuorumDB
+    from .dedup import scan_duplicates, save_report
+    s = _settings(config)
+    with QuorumDB(s.db_path) as db:
+        report = scan_duplicates(db, aggressive=aggressive)
+    report_path = Path("dedup-report.json")
+    save_report(report, report_path)
+    console.print("[green]Dedup scan complete:[/]")
+    console.print(f"  Files scanned: {report.total_files_scanned}")
+    console.print(f"  Duplicate clusters: {len(report.clusters)}")
+    console.print(f"  Total duplicates: {report.total_duplicates}")
+    console.print(f"  Report saved to: {report_path}")
+
+    if report.clusters:
+        t = Table(title="Duplicate Clusters")
+        t.add_column("cluster", justify="right")
+        t.add_column("strategy")
+        t.add_column("files", justify="right")
+        t.add_column("keep")
+        for cluster in report.clusters:
+            keep_file = next((f for f in cluster.files if f.media_id == cluster.recommended_keep), None)
+            keep_name = Path(keep_file.path).name if keep_file else "-"
+            t.add_row(str(cluster.id), cluster.strategy, str(len(cluster.files)), keep_name)
+        console.print(t)
+
+
+@dedup_app.command("report")
+def dedup_report(
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """View the last dedup scan results."""
+    from .dedup import load_report
+    report_path = Path("dedup-report.json")
+    if not report_path.exists():
+        console.print("[yellow]No dedup report found. Run 'quorum dedup scan' first.[/]")
+        return
+    report = load_report(report_path)
+    console.print(f"Scanned at: {report.scanned_at}")
+    console.print(f"Files: {report.total_files_scanned} | Duplicates: {report.total_duplicates}")
+
+    for cluster in report.clusters:
+        console.print(f"\n[bold]Cluster {cluster.id}[/] ({cluster.strategy})")
+        t = Table()
+        t.add_column("keep?")
+        t.add_column("file")
+        t.add_column("size", justify="right")
+        t.add_column("type")
+        for f in cluster.files:
+            keep = "✓" if f.media_id == cluster.recommended_keep else ""
+            t.add_row(keep, Path(f.path).name, str(f.size), f.media_type)
+        console.print(t)
+
+
+@dedup_app.command("apply")
+def dedup_apply(
+    cluster: int = typer.Option(None, "--cluster", help="Apply to specific cluster only."),
+    holding: Path = typer.Option(Path("_dedup_holding"), "--holding", help="Holding directory."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Move duplicate files to holding directory (reversible via undo)."""
+    from .db import QuorumDB
+    from .dedup import load_report, apply_dedup
+    report_path = Path("dedup-report.json")
+    if not report_path.exists():
+        console.print("[yellow]No dedup report found. Run 'quorum dedup scan' first.[/]")
+        return
+    report = load_report(report_path)
+    s = _settings(config)
+    with QuorumDB(s.db_path) as db:
+        result = apply_dedup(db, report, holding, cluster_id=cluster)
+    console.print("[green]Dedup apply complete:[/]")
+    console.print(f"  Moved: {result['moved']}")
+    console.print(f"  Skipped: {result['skipped']}")
+    console.print(f"  Failed: {result['failed']}")
+    console.print(f"  Holding dir: {holding}")
+
+
 if __name__ == "__main__":
     app()
