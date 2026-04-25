@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Search - Quorum{% endblock %}
+{% block content %}
+<h1>Search</h1>
+
+<form action="/search" method="get">
+    <div class="grid">
+        <input type="search" name="q" value="{{ query }}" placeholder="Search your library..." autofocus>
+        <button type="submit">Search</button>
+    </div>
+    <details>
+        <summary>Filters</summary>
+        <div class="grid">
+            <label>
+                Type
+                <select name="type">
+                    <option value="">All types</option>
+                    <option value="video" {% if type_filter == "video" %}selected{% endif %}>Video</option>
+                    <option value="photo" {% if type_filter == "photo" %}selected{% endif %}>Photo</option>
+                    <option value="music" {% if type_filter == "music" %}selected{% endif %}>Music</option>
+                    <option value="document" {% if type_filter == "document" %}selected{% endif %}>Document</option>
+                </select>
+            </label>
+            <label>
+                After
+                <input type="date" name="after" value="{{ after_filter }}">
+            </label>
+            <label>
+                Before
+                <input type="date" name="before" value="{{ before_filter }}">
+            </label>
+        </div>
+    </details>
+</form>
+
+{% if query %}
+    {% if results %}
+    <p>{{ results | length }} results for "<strong>{{ query }}</strong>"
+        {% if results[0].search_method %}
+            <span class="dim">({{ results[0].search_method }} search)</span>
+        {% endif %}
+    </p>
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Type</th>
+                <th>Score</th>
+                <th>File</th>
+                <th>Snippet</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in results %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td>{{ r.type }}</td>
+                <td>{{ "%.2f"|format(r.score) }}</td>
+                <td>{{ r.path.split('/')[-1] if '/' in r.path else r.path.split('\\')[-1] }}</td>
+                <td>{{ r.snippet[:80] if r.snippet else '-' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No results for "<strong>{{ query }}</strong>"</p>
+    {% endif %}
+{% endif %}
+{% endblock %}
