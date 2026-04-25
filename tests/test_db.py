@@ -556,3 +556,42 @@ class TestEmbeddingsCRUD:
             assert db.get_embeddings(mid) == []
         finally:
             db.close()
+
+
+class TestStats:
+    def _make_db(self, tmp_db_path: Path) -> QuorumDB:
+        return QuorumDB(tmp_db_path)
+
+    def test_stats_empty_db(self, tmp_db_path: Path) -> None:
+        db = self._make_db(tmp_db_path)
+        try:
+            stats = db.stats()
+            assert stats["total_media"] == 0
+            assert stats["by_type"] == {}
+            assert stats["total_size"] == 0
+            assert stats["total_events"] == 0
+            assert stats["total_tags"] == 0
+            assert stats["pending_jobs"] == 0
+        finally:
+            db.close()
+
+    def test_stats_populated_db(self, tmp_db_path: Path) -> None:
+        db = self._make_db(tmp_db_path)
+        try:
+            db.insert_media(path="/a.mkv", media_type="video", size=1000)
+            db.insert_media(path="/b.mkv", media_type="video", size=2000)
+            db.insert_media(path="/c.jpg", media_type="photo", size=500)
+            mid = 1
+            db.insert_tag(mid, "scene", "beach")
+            db.insert_event(name="Beach Day", start_time="2024-06-15T10:00:00")
+            db.insert_job("enrich")
+            stats = db.stats()
+            assert stats["total_media"] == 3
+            assert stats["by_type"]["video"] == 2
+            assert stats["by_type"]["photo"] == 1
+            assert stats["total_size"] == 3500
+            assert stats["total_events"] == 1
+            assert stats["total_tags"] == 1
+            assert stats["pending_jobs"] == 1
+        finally:
+            db.close()

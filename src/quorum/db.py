@@ -508,3 +508,27 @@ class QuorumDB:
         else:
             self.conn.execute("DELETE FROM embeddings WHERE media_id = ?", (media_id,))
         self.conn.commit()
+
+    # ------------------------------------------------------------------
+    # Aggregate statistics
+    # ------------------------------------------------------------------
+
+    def stats(self) -> dict:
+        total_media = self.conn.execute("SELECT COUNT(*) FROM media").fetchone()[0]
+        total_size = self.conn.execute("SELECT COALESCE(SUM(size), 0) FROM media").fetchone()[0]
+        total_events = self.conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+        total_tags = self.conn.execute("SELECT COUNT(*) FROM tags").fetchone()[0]
+        pending_jobs = self.conn.execute(
+            "SELECT COUNT(*) FROM processing WHERE status = 'pending'"
+        ).fetchone()[0]
+        by_type: dict[str, int] = {}
+        for row in self.conn.execute("SELECT type, COUNT(*) FROM media GROUP BY type"):
+            by_type[row[0]] = row[1]
+        return {
+            "total_media": total_media,
+            "by_type": by_type,
+            "total_size": total_size,
+            "total_events": total_events,
+            "total_tags": total_tags,
+            "pending_jobs": pending_jobs,
+        }
