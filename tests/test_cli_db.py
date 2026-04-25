@@ -507,3 +507,32 @@ class TestDocsCommands:
         result = runner.invoke(app, ["docs", "scan", str(tmp_path), "--config", str(config_path)])
         assert result.exit_code == 0
         assert "Document Scan" in result.output
+
+
+class TestBackupCommands:
+    def test_backup_manifest(self, tmp_path: Path) -> None:
+        from quorum.db import QuorumDB
+        db_path = tmp_path / "quorum.db"
+        with QuorumDB(db_path) as db:
+            db.insert_media(path="/a.mkv", media_type="video", size=100)
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'db_path = "{db_path.as_posix()}"', encoding="utf-8")
+        manifest = tmp_path / "manifest.db"
+        result = runner.invoke(app, ["backup", "manifest", "--output", str(manifest), "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "Manifest created" in result.output
+        assert manifest.exists()
+
+    def test_backup_verify(self, tmp_path: Path) -> None:
+        from quorum.db import QuorumDB
+        from quorum.backup import create_manifest
+        db_path = tmp_path / "quorum.db"
+        manifest = tmp_path / "manifest.db"
+        with QuorumDB(db_path) as db:
+            db.insert_media(path="/nonexistent.mkv", media_type="video", size=100)
+            create_manifest(db, manifest)
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(f'db_path = "{db_path.as_posix()}"', encoding="utf-8")
+        result = runner.invoke(app, ["backup", "verify", str(manifest), "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "Missing" in result.output

@@ -48,6 +48,8 @@ dependencies = [
     # Document text extraction for document organization plugin
     "pdfplumber>=0.10",
     "python-docx>=1.0",
+    # Scanned photo recovery: image analysis for border/deskew detection
+    "opencv-python-headless>=4.8",
 ]
 
 [project.optional-dependencies]
