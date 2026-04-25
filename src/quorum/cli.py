@@ -1356,5 +1356,153 @@ def backup_diff(
             console.print(f"  [red]- {Path(p).name}[/]")
 
 
+rules_app = typer.Typer(help="Manage custom taxonomy rules.", no_args_is_help=True)
+app.add_typer(rules_app, name="rules")
+
+
+@rules_app.command("list")
+def rules_list(
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """List all configured rules."""
+    import tomllib
+    from .rules import load_rules
+    cfg_path = config or Path("config.toml")
+    if not cfg_path.exists():
+        console.print("[yellow]No config.toml found. No rules configured.[/]")
+        return
+    data = tomllib.loads(cfg_path.read_text(encoding="utf-8"))
+    rules = load_rules(data)
+    if not rules:
+        console.print("[yellow]No rules configured. Add [[rules]] sections to config.toml.[/]")
+        return
+    t = Table(title="Custom Rules")
+    t.add_column("priority", justify="right")
+    t.add_column("name")
+    t.add_column("match")
+    t.add_column("action")
+    t.add_column("enabled")
+    for r in rules:
+        match_str = ", ".join(f"{k}={v}" for k, v in r.match.items())
+        action_str = r.action.get("move_to", "?")
+        t.add_row(str(r.priority), r.name, match_str[:40], action_str[:40], "yes" if r.enabled else "no")
+    console.print(t)
+
+
+@rules_app.command("test")
+def rules_test(
+    file: Path = typer.Argument(..., help="File to test against rules."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Test which rules would match a specific file."""
+    import tomllib
+    from .rules import load_rules, match_file
+    cfg_path = config or Path("config.toml")
+    if not cfg_path.exists():
+        console.print("[yellow]No config.toml found.[/]")
+        return
+    data = tomllib.loads(cfg_path.read_text(encoding="utf-8"))
+    rules = load_rules(data)
+    result = match_file(file, rules)
+    if result:
+        console.print(f"[green]Match:[/] Rule '{result.rule.name}' (priority {result.rule.priority})")
+        console.print(f"  → {result.dest_path}")
+    else:
+        console.print(f"[yellow]No rules match {file.name}[/]")
+
+
+downloads_app = typer.Typer(help="Tame your Downloads folder.", no_args_is_help=True)
+app.add_typer(downloads_app, name="downloads")
+
+
+@downloads_app.command("tidy")
+def downloads_tidy(
+    src: Path = typer.Argument(None, help="Downloads directory (default: ~/Downloads)."),
+    dest: Path = typer.Option(None, "--dest", "-d", help="Destination root."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview only."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Classify and organize files in your Downloads folder."""
+    from .plugins.downloads import DownloadsPlugin
+    source = src or Path.home() / "Downloads"
+    if not source.exists():
+        console.print(f"[red]Directory not found: {source}[/]")
+        raise typer.Exit(1)
+    plugin = DownloadsPlugin()
+    plugin.on_register({"dest_root": dest} if dest else {})
+    files = [f for f in source.iterdir() if f.is_file()]
+    if not files:
+        console.print(f"[yellow]No files in {source}[/]")
+        return
+    proposals = plugin.on_scan(files)
+    t = Table(title=f"Downloads Tidy ({len(proposals)} files)")
+    t.add_column("file")
+    t.add_column("category")
+    t.add_column("→ destination")
+    for p in proposals:
+        t.add_row(Path(p.source_path).name, p.metadata.get("category", "?"), p.dest_path)
+    console.print(t)
+    if not dry_run and dest:
+        results = plugin.on_apply(proposals)
+        moved = sum(1 for r in results if r["status"] == "moved")
+        console.print(f"[green]Organized {moved} files[/]")
+    elif not dry_run and not dest:
+        console.print("[dim]Use --dest to specify where to organize files, or --dry-run to preview.[/]")
+
+
+desktop_app = typer.Typer(help="Organize your Desktop.", no_args_is_help=True)
+app.add_typer(desktop_app, name="desktop")
+
+
+@desktop_app.command("scan")
+def desktop_scan_cmd(
+    path: Path = typer.Argument(None, help="Desktop path (default: ~/Desktop)."),
+    days: int = typer.Option(30, "--days", help="Archive files older than N days."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Analyze Desktop and show archival suggestions."""
+    from .plugins.desktop import DesktopPlugin
+    target = path or Path.home() / "Desktop"
+    if not target.exists():
+        console.print(f"[red]Not found: {target}[/]")
+        raise typer.Exit(1)
+    plugin = DesktopPlugin()
+    plugin.on_register({"archive_after_days": days})
+    files = [f for f in target.iterdir() if f.is_file()]
+    proposals = plugin.on_scan(files)
+    if not proposals:
+        console.print("[green]Desktop is clean! No files older than {days} days.[/]")
+        return
+    t = Table(title=f"Desktop: {len(proposals)} files to archive")
+    t.add_column("file")
+    t.add_column("age", justify="right")
+    t.add_column("→ destination")
+    for p in proposals:
+        t.add_row(Path(p.source_path).name, f"{p.metadata['age_days']}d", p.dest_path)
+    console.print(t)
+
+
+@desktop_app.command("stats")
+def desktop_stats_cmd(
+    path: Path = typer.Argument(None, help="Desktop path (default: ~/Desktop)."),
+    config: Path = typer.Option(None, "--config", "-c", help="Path to config.toml"),
+) -> None:
+    """Show age distribution of Desktop files."""
+    from .plugins.desktop import desktop_stats
+    target = path or Path.home() / "Desktop"
+    stats = desktop_stats(target)
+    if "error" in stats:
+        console.print(f"[red]{stats['error']}[/]")
+        raise typer.Exit(1)
+    t = Table(title="Desktop File Ages")
+    t.add_column("age range")
+    t.add_column("count", justify="right")
+    for age_range, count in stats["buckets"].items():
+        t.add_row(age_range, str(count))
+    size_mb = stats["total_size"] / (1024 * 1024)
+    console.print(t)
+    console.print(f"Total: {stats['file_count']} files, {size_mb:.1f} MB")
+
+
 if __name__ == "__main__":
     app()
