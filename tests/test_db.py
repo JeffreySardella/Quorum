@@ -597,6 +597,59 @@ class TestStats:
             db.close()
 
 
+class TestDashboardStats:
+    def _make_db(self, tmp_db_path: Path) -> QuorumDB:
+        return QuorumDB(tmp_db_path)
+
+    def test_dashboard_stats_empty(self, tmp_db_path: Path) -> None:
+        db = self._make_db(tmp_db_path)
+        try:
+            stats = db.dashboard_stats()
+            assert stats["total_media"] == 0
+            assert stats["by_year"] == {}
+            assert stats["storage_by_type"] == {}
+            assert stats["top_faces"] == []
+            assert stats["recent_actions"] == []
+            assert stats["confidence_dist"] == [0] * 10
+            assert stats["events_by_month"] == {}
+        finally:
+            db.close()
+
+    def test_dashboard_stats_populated(self, tmp_db_path: Path) -> None:
+        db = self._make_db(tmp_db_path)
+        try:
+            db.insert_media(path="/a.mkv", media_type="video", size=1000, created_at="2024-06-15T10:00:00")
+            db.insert_media(path="/b.mkv", media_type="video", size=2000, created_at="2024-07-01T10:00:00")
+            db.insert_media(path="/c.jpg", media_type="photo", size=500, created_at="2023-12-25T08:00:00")
+
+            db.insert_tag(1, "face", "Sophia")
+            db.insert_tag(2, "face", "Sophia")
+            db.insert_tag(3, "face", "Max")
+
+            db.insert_signal(1, "filename", "Test", 0.85, "", "2024-01-01T00:00:00")
+            db.insert_signal(2, "vision", "Test", 0.42, "", "2024-01-01T00:00:00")
+
+            db.insert_action(operation="move", source_path="/x", dest_path="/y", created_at="2024-01-01T00:00:00")
+
+            db.insert_event(name="Beach Day", start_time="2024-06-15T10:00:00")
+
+            stats = db.dashboard_stats()
+            assert stats["total_media"] == 3
+            assert stats["by_year"]["2024"] == 2
+            assert stats["by_year"]["2023"] == 1
+            assert stats["storage_by_type"]["video"] == 3000
+            assert stats["storage_by_type"]["photo"] == 500
+            assert len(stats["top_faces"]) == 2
+            assert stats["top_faces"][0]["name"] == "Sophia"
+            assert stats["top_faces"][0]["count"] == 2
+            assert len(stats["recent_actions"]) == 1
+            assert stats["confidence_dist"][8] == 1  # 0.85 -> bucket 8
+            assert stats["confidence_dist"][4] == 1  # 0.42 -> bucket 4
+            assert stats["events_by_month"]["2024-06"] == 1
+        finally:
+            db.close()
+
+
 class TestContextManager:
     def test_context_manager_closes(self, tmp_db_path: Path) -> None:
         with QuorumDB(tmp_db_path) as db:
