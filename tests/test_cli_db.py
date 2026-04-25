@@ -473,3 +473,37 @@ class TestMusicCommands:
         result = runner.invoke(app, ["music", "scan", str(tmp_path), "--config", str(config_path)])
         assert result.exit_code == 0
         assert "Music Scan" in result.output
+
+
+class TestAudioCommands:
+    def test_audio_scan_empty(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "config.toml"
+        config_path.write_text('db_path = "quorum.db"', encoding="utf-8")
+        result = runner.invoke(app, ["audio", "scan", str(tmp_path), "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "No audio" in result.output
+
+    def test_audio_scan_with_files(self, tmp_path: Path) -> None:
+        (tmp_path / "2024-06-15_meeting.m4a").write_bytes(b"\x00" * 100)
+        config_path = tmp_path / "config.toml"
+        config_path.write_text('db_path = "quorum.db"', encoding="utf-8")
+        result = runner.invoke(app, ["audio", "scan", str(tmp_path), "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "Audio Scan" in result.output
+
+
+class TestDocsCommands:
+    def test_docs_scan_empty(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "config.toml"
+        config_path.write_text('db_path = "quorum.db"', encoding="utf-8")
+        result = runner.invoke(app, ["docs", "scan", str(tmp_path), "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "No document" in result.output
+
+    def test_docs_scan_with_files(self, tmp_path: Path) -> None:
+        (tmp_path / "invoice_2024.txt").write_text("Invoice for services")
+        config_path = tmp_path / "config.toml"
+        config_path.write_text('db_path = "quorum.db"', encoding="utf-8")
+        result = runner.invoke(app, ["docs", "scan", str(tmp_path), "--config", str(config_path)])
+        assert result.exit_code == 0
+        assert "Document Scan" in result.output

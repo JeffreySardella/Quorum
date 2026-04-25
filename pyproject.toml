@@ -45,6 +45,9 @@ dependencies = [
     "imagehash>=4.3",
     # Music tag reading for music organization plugin
     "mutagen>=1.47",
+    # Document text extraction for document organization plugin
+    "pdfplumber>=0.10",
+    "python-docx>=1.0",
 ]
 
 [project.optional-dependencies]
