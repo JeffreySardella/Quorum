@@ -710,6 +710,98 @@ class QuorumDB:
         return results
 
     # ------------------------------------------------------------------
+    # Review queue
+    # ------------------------------------------------------------------
+
+    def get_review_queue(
+        self,
+        sort: str = "confidence",
+        media_type: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[dict]:
+        """Get media items pending review — those with signals but no feedback,
+        with max confidence between review_floor and auto_apply thresholds."""
+        order = "ASC" if sort == "confidence" else "DESC"
+        sort_col = "max_conf" if sort == "confidence" else "s.created_at"
+
+        sql = """
+            SELECT m.id, m.path, m.type, m.size, m.created_at,
+                   MAX(s.confidence) as max_conf,
+                   GROUP_CONCAT(s.candidate, ' | ') as candidates
+            FROM media m
+            JOIN signals s ON s.media_id = m.id
+            LEFT JOIN feedback f ON f.media_id = m.id
+            WHERE f.id IS NULL
+        """
+        params: list = []
+
+        if media_type:
+            sql += " AND m.type = ?"
+            params.append(media_type)
+
+        sql += f" GROUP BY m.id ORDER BY {sort_col} {order} LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
+        self.conn.row_factory = sqlite3.Row
+        rows = self.conn.execute(sql, params).fetchall()
+        self.conn.row_factory = None
+        return [dict(r) for r in rows]
+
+    def get_review_item(self, media_id: int) -> dict | None:
+        """Get a single review item with full signal details."""
+        media = self.get_media(media_id)
+        if not media:
+            return None
+        signals = self.get_signals(media_id)
+        feedback = self.get_feedback(media_id)
+        title = self.get_metadata_value(media_id, "title")
+        description = self.get_metadata_value(media_id, "description")
+        transcript = self.get_metadata_value(media_id, "transcript")
+        return {
+            **media,
+            "signals": signals,
+            "feedback": feedback,
+            "title": title,
+            "description": description,
+            "transcript_snippet": (transcript[:200] + "...") if transcript and len(transcript) > 200 else transcript,
+            "max_confidence": max((s["confidence"] for s in signals), default=0),
+            "top_candidate": max(signals, key=lambda s: s["confidence"])["candidate"] if signals else None,
+            "reviewed": len(feedback) > 0,
+        }
+
+    def review_stats(self) -> dict:
+        """Get counts of review queue status."""
+        total_with_signals = self.conn.execute(
+            "SELECT COUNT(DISTINCT media_id) FROM signals"
+        ).fetchone()[0]
+        reviewed = self.conn.execute(
+            "SELECT COUNT(DISTINCT media_id) FROM feedback"
+        ).fetchone()[0]
+        pending = self.conn.execute(
+            "SELECT COUNT(DISTINCT s.media_id) FROM signals s "
+            "LEFT JOIN feedback f ON f.media_id = s.media_id "
+            "WHERE f.id IS NULL"
+        ).fetchone()[0]
+        approved = self.conn.execute(
+            "SELECT COUNT(*) FROM feedback WHERE action = 'approve'"
+        ).fetchone()[0]
+        rejected = self.conn.execute(
+            "SELECT COUNT(*) FROM feedback WHERE action = 'reject'"
+        ).fetchone()[0]
+        corrected = self.conn.execute(
+            "SELECT COUNT(*) FROM feedback WHERE action = 'correct'"
+        ).fetchone()[0]
+        return {
+            "total_with_signals": total_with_signals,
+            "reviewed": reviewed,
+            "pending": pending,
+            "approved": approved,
+            "rejected": rejected,
+            "corrected": corrected,
+        }
+
+    # ------------------------------------------------------------------
     # Aggregate statistics
     # ------------------------------------------------------------------
 

@@ -1,55 +1,96 @@
 {% extends "base.html" %}
-{% block title %}Review Queue - Quorum{% endblock %}
+{% block title %}Review - Quorum{% endblock %}
 {% block content %}
 <h1>Review Queue</h1>
-<p>Proposals from <code>{{ queue_path }}</code>. Review, edit, then apply.</p>
 
-{% if proposals %}
-<form hx-post="/api/review/apply" hx-target="#apply-result" hx-swap="innerHTML">
-    <table>
-        <thead>
-            <tr>
-                <th>Confidence</th>
-                <th>Current Name</th>
-                <th>Proposed Name</th>
-                <th>Signals</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for p in proposals %}
-            <tr>
-                <td>
-                    {% set conf = p.get('confidence', 0) %}
-                    {% if conf >= 0.85 %}
-                        <span class="status-ok">{{ '%.2f' % conf }}</span>
-                    {% elif conf >= 0.30 %}
-                        <span class="status-warn">{{ '%.2f' % conf }}</span>
-                    {% else %}
-                        <span class="status-error">{{ '%.2f' % conf }}</span>
-                    {% endif %}
-                </td>
-                <td>{{ p.get('current_name', p.get('src', '-')) }}</td>
-                <td>{{ p.get('proposed_name', p.get('proposed', '-')) }}</td>
-                <td>
-                    {% for s in p.get('signals', []) %}
-                        <small>{{ s.get('signal', '') }}: {{ '%.2f' % s.get('score', 0) }}</small><br>
-                    {% endfor %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    <fieldset>
-        <label>
-            <input type="checkbox" name="dry_run" value="true">
-            Dry run
-        </label>
-    </fieldset>
-    <button type="submit">Apply Queue</button>
-</form>
-{% else %}
-<p>No proposals in the queue. Run <a href="/commands">scan</a> first.</p>
+{% if stats %}
+<div class="stat-grid">
+    <article class="stat-card">
+        <p>Pending</p>
+        <h3>{{ stats.pending }}</h3>
+    </article>
+    <article class="stat-card">
+        <p>Approved</p>
+        <h3>{{ stats.approved }}</h3>
+    </article>
+    <article class="stat-card">
+        <p>Rejected</p>
+        <h3>{{ stats.rejected }}</h3>
+    </article>
+    <article class="stat-card">
+        <p>Corrected</p>
+        <h3>{{ stats.corrected }}</h3>
+    </article>
+</div>
 {% endif %}
 
-<div id="apply-result"></div>
+<form action="/review" method="get" style="margin-bottom: 1rem;">
+    <div class="grid">
+        <select name="type">
+            <option value="">All types</option>
+            <option value="video" {% if type_filter == "video" %}selected{% endif %}>Video</option>
+            <option value="photo" {% if type_filter == "photo" %}selected{% endif %}>Photo</option>
+        </select>
+        <select name="sort">
+            <option value="confidence" {% if sort == "confidence" %}selected{% endif %}>Lowest confidence first</option>
+            <option value="newest" {% if sort == "newest" %}selected{% endif %}>Newest first</option>
+        </select>
+        <button type="submit">Filter</button>
+    </div>
+</form>
+
+{% if queue %}
+<p>{{ queue | length }} items to review</p>
+
+{% for item in queue %}
+<article id="review-{{ item.id }}">
+    <header>
+        <strong>{{ item.path.split('/')[-1] if '/' in item.path else item.path.split('\\')[-1] }}</strong>
+        <span style="float: right;">
+            {{ item.type }} &mdash; confidence: {{ "%.2f"|format(item.max_conf or 0) }}
+        </span>
+    </header>
+
+    {% if item.top_candidate %}
+    <p>Top candidate: <strong>{{ item.top_candidate }}</strong></p>
+    {% endif %}
+
+    {% if item.signals %}
+    <details>
+        <summary>Signal breakdown ({{ item.signals | length }} signals)</summary>
+        <table>
+            <thead><tr><th>Signal</th><th>Candidate</th><th>Confidence</th><th>Reasoning</th></tr></thead>
+            <tbody>
+                {% for s in item.signals %}
+                <tr>
+                    <td>{{ s.signal_name }}</td>
+                    <td>{{ s.candidate }}</td>
+                    <td>{{ "%.2f"|format(s.confidence) }}</td>
+                    <td>{{ s.reasoning[:80] if s.reasoning else '-' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </details>
+    {% endif %}
+
+    <footer>
+        <div class="grid">
+            <button hx-post="/api/review/{{ item.id }}/approve" hx-target="#review-{{ item.id }}" hx-swap="outerHTML"
+                    class="outline">Approve</button>
+            <button hx-post="/api/review/{{ item.id }}/reject" hx-target="#review-{{ item.id }}" hx-swap="outerHTML"
+                    class="outline secondary">Reject</button>
+            <form hx-post="/api/review/{{ item.id }}/correct" hx-target="#review-{{ item.id }}" hx-swap="outerHTML"
+                  style="display: flex; gap: 0.5rem; margin: 0;">
+                <input type="text" name="title" placeholder="Correct title..." style="margin: 0;">
+                <button type="submit" class="outline contrast">Correct</button>
+            </form>
+        </div>
+    </footer>
+</article>
+{% endfor %}
+
+{% else %}
+<p>No items pending review. Run <code>quorum auto</code> or <code>quorum scan</code> to generate identifications.</p>
+{% endif %}
 {% endblock %}

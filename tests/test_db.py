@@ -829,3 +829,102 @@ class TestVectorSearch:
             assert results == []
         finally:
             db.close()
+
+
+class TestReviewQueue:
+    def _make_db(self, tmp_db_path: Path) -> QuorumDB:
+        return QuorumDB(tmp_db_path)
+
+    def test_review_queue_empty(self, tmp_db_path: Path) -> None:
+        db = self._make_db(tmp_db_path)
+        try:
+            queue = db.get_review_queue()
+            assert queue == []
+        finally:
+            db.close()
+
+    def test_review_queue_shows_unreviewed(self, tmp_db_path: Path) -> None:
+        db = self._make_db(tmp_db_path)
+        try:
+            mid = db.insert_media(path="/a.mkv", media_type="video", size=100)
+            db.insert_signal(mid, "filename", "The Matrix", 0.7, "year match", "2024-01-01T00:00:00")
+            queue = db.get_review_queue()
+            assert len(queue) == 1
+            assert queue[0]["id"] == mid
+        finally:
+            db.close()
+
+    def test_review_queue_excludes_reviewed(self, tmp_db_path: Path) -> None:
+        db = self._make_db(tmp_db_path)
+        try:
+            m1 = db.insert_media(path="/a.mkv", media_type="video", size=100)
+            m2 = db.insert_media(path="/b.mkv", media_type="video", size=100)
+            db.insert_signal(m1, "filename", "X", 0.7, "", "2024-01-01T00:00:00")
+            db.insert_signal(m2, "filename", "Y", 0.5, "", "2024-01-01T00:00:00")
+            db.insert_feedback(m1, "approve", "X", created_at="2024-01-01T00:00:00")
+            queue = db.get_review_queue()
+            assert len(queue) == 1
+            assert queue[0]["id"] == m2
+        finally:
+            db.close()
+
+    def test_review_queue_sorted_by_confidence(self, tmp_db_path: Path) -> None:
+        db = self._make_db(tmp_db_path)
+        try:
+            m1 = db.insert_media(path="/a.mkv", media_type="video", size=100)
+            m2 = db.insert_media(path="/b.mkv", media_type="video", size=100)
+            db.insert_signal(m1, "filename", "X", 0.8, "", "2024-01-01T00:00:00")
+            db.insert_signal(m2, "filename", "Y", 0.3, "", "2024-01-01T00:00:00")
+            queue = db.get_review_queue(sort="confidence")
+            assert queue[0]["id"] == m2  # lowest confidence first
+        finally:
+            db.close()
+
+    def test_review_queue_filter_by_type(self, tmp_db_path: Path) -> None:
+        db = self._make_db(tmp_db_path)
+        try:
+            m1 = db.insert_media(path="/a.mkv", media_type="video", size=100)
+            m2 = db.insert_media(path="/b.jpg", media_type="photo", size=100)
+            db.insert_signal(m1, "filename", "X", 0.7, "", "2024-01-01T00:00:00")
+            db.insert_signal(m2, "filename", "Y", 0.7, "", "2024-01-01T00:00:00")
+            queue = db.get_review_queue(media_type="photo")
+            assert len(queue) == 1
+            assert queue[0]["type"] == "photo"
+        finally:
+            db.close()
+
+    def test_get_review_item(self, tmp_db_path: Path) -> None:
+        db = self._make_db(tmp_db_path)
+        try:
+            mid = db.insert_media(path="/a.mkv", media_type="video", size=100)
+            db.insert_signal(mid, "filename", "The Matrix", 0.9, "year found", "2024-01-01T00:00:00")
+            db.insert_signal(mid, "vision", "The Matrix", 0.7, "Neo visible", "2024-01-01T00:00:00")
+            db.set_metadata(mid, "title", "Unknown Video")
+            item = db.get_review_item(mid)
+            assert item is not None
+            assert len(item["signals"]) == 2
+            assert item["max_confidence"] == 0.9
+            assert item["top_candidate"] == "The Matrix"
+            assert item["reviewed"] is False
+        finally:
+            db.close()
+
+    def test_review_stats(self, tmp_db_path: Path) -> None:
+        db = self._make_db(tmp_db_path)
+        try:
+            m1 = db.insert_media(path="/a.mkv", media_type="video", size=100)
+            m2 = db.insert_media(path="/b.mkv", media_type="video", size=100)
+            m3 = db.insert_media(path="/c.mkv", media_type="video", size=100)
+            db.insert_signal(m1, "f", "X", 0.7, "", "2024-01-01T00:00:00")
+            db.insert_signal(m2, "f", "Y", 0.5, "", "2024-01-01T00:00:00")
+            db.insert_signal(m3, "f", "Z", 0.3, "", "2024-01-01T00:00:00")
+            db.insert_feedback(m1, "approve", "X", created_at="2024-01-01T00:00:00")
+            db.insert_feedback(m2, "reject", "Y", created_at="2024-01-01T00:00:00")
+            stats = db.review_stats()
+            assert stats["total_with_signals"] == 3
+            assert stats["reviewed"] == 2
+            assert stats["pending"] == 1
+            assert stats["approved"] == 1
+            assert stats["rejected"] == 1
+        finally:
+            db.close()
